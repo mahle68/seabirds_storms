@@ -11,7 +11,7 @@ wgs <- CRS("+proj=longlat +datum=WGS84")
 
 #read in the csv file downloaded from IBTrACS (https://www.ncdc.noaa.gov/ibtracs/index.php?name=ib-v4-access)
 #meta-data available on https://www.ncdc.noaa.gov/ibtracs/pdf/IBTrACS_v04_column_documentation.pdf
-storms <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/weather_data/ibtracs.ALL.list.v04r00.csv", stringsAsFactors = F)
+storms <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/weather_data/ibtracs.ALL.list.v04r00.csv", stringsAsFactors = F)
 
 #filter for category 5 hurricanes for 2017 and 2018
 
