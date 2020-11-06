@@ -21,6 +21,11 @@ storms <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/we
     select(NAME) %>% 
     distinct()
 
+  cat5_2017_18_names <- storms %>%
+    filter(USA_SSHS == 5) %>% 
+    select(NAME) %>% 
+    distinct()  
+  
 #extract entire hurricane tracks
 cat5_2017_18 <- storms %>%
   filter(NAME %in% cat5_2017_18_names$NAME, SEASON %in% c(2017, 2018)) %>% 
@@ -43,6 +48,7 @@ mapview(cat5_2017_18, zcol = "USA_SSHS")
 extents <- storms %>%
   filter(NAME %in% cat5_2017_18_names$NAME, SEASON %in% c(2017, 2018) & USA_SSHS %in% c(3,4,5)) %>% 
   mutate(timestamp = as.POSIXct(strptime(ISO_TIME,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  mutate(NAME = ifelse(NAME == "MARIA" & year(timestamp) == 2018, "MARIA_EA", NAME)) %>% 
   mutate_at(vars(9:10), as.numeric) %>% 
   group_by(NAME) %>%
   summarize(start = date(min(timestamp)),
