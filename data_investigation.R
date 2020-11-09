@@ -10,7 +10,18 @@ library(mapview)
 library(concaveman) #concave hull 
 
 wgs <- CRS("+proj=longlat +datum=WGS84")
-  
+meters_proj <- CRS("+proj=moll +ellps=WGS84")
+
+# mcp <- function(x, percentile=95){ #mcp function that takes sf as input
+# 
+#   centroid <- sf::st_centroid(sf::st_union(x))
+#   dist <- as.numeric(sf::st_distance(x, centroid))
+#   within_percentile_range <- dist <= quantile(dist, percentile/100)
+#   x_filter <- st_union(x[within_percentile_range,])
+#   st_convex_hull(x_filter)
+# 
+# } #from package sdmflow
+
 #----------------------------------------------------------------------------------
 #Peter Ryan's data (requested and downloaded through the seabird tracking database)
 
@@ -101,7 +112,8 @@ data_flt <- lapply(data, function(x){
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   drop_na()
 
-  
+save(data_flt, file = "data_flt.RData")
+
 #data_vis <- data_flt %>% #data from 2008-2017 #dataset too large. crashes R (in laptop)
 #  st_as_sf(coords = c("location.long","location.lat"),
 #           crs = wgs) 
@@ -124,32 +136,83 @@ write.csv(data_mv1, "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/an
 write.csv(data_mv2, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/movebank_public/mv_public_data2.csv")  
 
 
-#-- investigations of available wind
-#use a sample
+#-- investigations of available wind ----
+#use a sample: the Mag Frigatebird
+#tried calculating an MCP around the points and putting a buffer around it (didnt find a good mcp function that takes sf as input), 
+#then tried converting the points to a line and putting a buffer around the line (very time-consuming),
+#the, tried to just directly put the puffer around each point, then unify them for each month-year combo (pretty fast!)
+
+load("data_flt.RData")
+
 MF <- data_flt %>% 
   filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
   mutate(year = year(timestamp),
          month = month(timestamp)) %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs)
+
+MF_pol <- data_flt %>% 
+  filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
+  mutate(year = year(timestamp),
+         month = month(timestamp)) %>% 
   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+  st_transform(meters_proj) %>% 
   group_by(year, month) %>%
-  group_map(concaveman)
+  filter(n() >= 2) %>%
+  summarize(do_union = F) %>% 
+  st_cast("LINESTRING") %>% 
+  group_by(year, month) %>% 
+  #rowwise() %>% 
+  group_map(~ st_buffer(., 100000)) #took 10 min
+
+MF_pol2 <- data_flt %>% 
+  filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
+  mutate(year = year(timestamp),
+         month = month(timestamp)) %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+  st_transform(meters_proj) %>% 
+  group_by(year, month) %>%
+  filter(n() >= 2) %>%
+  #summarize(do_union = F) %>% 
+  #st_cast("LINESTRING") %>% 
+  #group_by(year, month) %>% 
+  #rowwise() %>% 
+  group_map(~ st_buffer(., 500000)) %>% #way faster than converting to a line and calculating a buffer around the line
+  map(~ st_union(.))
 
 
-  summarise(conv_hull = concaveman())
+
+#%>% 
   
-mapview(MF)
+  st_union()
+  #group_map(mcp)
+  group_map(concaveman)
+  
+
+#coordinates(MF) <-~ location.long + location.lat
+#proj4string(MF) <- wgs
+
+MF_ls <- split(MF, list(MF$year, MF$month), drop = T)
+MF_ls <- MF_ls[-which(lapply(MF_ls,nrow) < 3)] #remove groups with less than 3 points 
 
 
-concaveman()
+mcps <- lapply(MF_ls, function(x){
+  pol <- x %>% 
+    spTransform(meters_proj) %>% 
+    mcp(x) #%>%  #calculate the mcp
+  
+}              
+)
 
 
-mcp <- 
+mcps <- lapply(MF_ls, function(x){
+  pol <- x %>% 
+    sp_transform(meters_proj) %>% 
+    mcp(x) #%>%  #calculate the mcp
 
-coordinates(TB) <- ~ location.long + location.lat
+}              
+)
 
-#TB <- TB %>% 
-#   %>% 
-#  mutate(yr = year(timestamp),
-#         mth = month(timestamp)) %>% 
-  group_by(yr,mth) %>% 
-  mcp()
+#create move object to compare with the linestring
+library(move)
+mv <- move(x = st_coordinates(MF)[,"X"],y = st_coordinates(MF)[,"Y"],time = MF$timestamp,
+           data = as.data.frame(MF,row.names = c(1:nrow(MF))),animal = MF$individual.local.identifier,proj = wgs)
