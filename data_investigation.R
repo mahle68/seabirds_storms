@@ -6,8 +6,7 @@ library(sf)
 library(lubridate)
 library(sp)
 library(mapview)
-#library(adehabitatHR)
-library(concaveman) #concave hull 
+
 
 wgs <- CRS("+proj=longlat +datum=WGS84")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -144,73 +143,66 @@ write.csv(data_mv2, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/a
 
 load("data_flt.RData")
 
-MF <- data_flt %>% 
+#just the points for vis purposes
+MF_raw <- data_flt %>% 
   filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
-  mutate(year = year(timestamp),
-         month = month(timestamp)) %>% 
+  mutate(yr = year(timestamp),
+         mn = month(timestamp)) %>% 
   st_as_sf(coords = c("location.long","location.lat"), crs = wgs)
+# 
+# MF_pol <- data_flt %>% 
+#   filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
+#   mutate(year = year(timestamp),
+#          month = month(timestamp)) %>% 
+#   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+#   st_transform(meters_proj) %>% 
+#   group_by(year, month) %>%
+#   filter(n() >= 2) %>%
+#   summarize(do_union = F) %>% 
+#   st_cast("LINESTRING") %>% 
+#   group_by(year, month) %>% 
+#   #rowwise() %>% 
+#   group_map(~ st_buffer(., 100000)) #took 10 min
 
-MF_pol <- data_flt %>% 
+#create polygons by putting 500 km buffers around the points and splitting by year and month
+MF_pols <- data_flt %>% 
   filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
-  mutate(year = year(timestamp),
-         month = month(timestamp)) %>% 
+  mutate(yr = year(timestamp),
+         mn = month(timestamp)) %>% 
   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
-  st_transform(meters_proj) %>% 
-  group_by(year, month) %>%
+  st_transform(meters_proj) %>% #need meters units for the buffer
+  group_by(yr, mn) %>%
   filter(n() >= 2) %>%
-  summarize(do_union = F) %>% 
-  st_cast("LINESTRING") %>% 
-  group_by(year, month) %>% 
-  #rowwise() %>% 
-  group_map(~ st_buffer(., 100000)) #took 10 min
-
-MF_pol2 <- data_flt %>% 
-  filter(individual.taxon.canonical.name == "Fregata magnificens") %>% 
-  mutate(year = year(timestamp),
-         month = month(timestamp)) %>% 
-  st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
-  st_transform(meters_proj) %>% 
-  group_by(year, month) %>%
-  filter(n() >= 2) %>%
-  #summarize(do_union = F) %>% 
-  #st_cast("LINESTRING") %>% 
-  #group_by(year, month) %>% 
-  #rowwise() %>% 
   group_map(~ st_buffer(., 500000)) %>% #way faster than converting to a line and calculating a buffer around the line
-  map(~ st_union(.))
+  map(. %>% summarise(yr = head(year(timestamp),1), #summarise acts as st_union, but enables me to keep the data
+                      mn = head(month(timestamp),1),
+                  species = head(individual.taxon.canonical.name,1),
+                  days_in_mn = days_in_month(head(timestamp,1))) %>% #this is useful when assigining timestamps to the random points in the next step 
+        mutate(area = as.numeric(st_area(.)/1e+6))) %>%  #calc area in km2
+  map(~ st_transform(., wgs))
+
+
+#place random points on the polygon. numbers relative to the size of the polygon
+#each ECMWF Era-Interim is 6400 km2 (80 km cell size)... let's say, one point per 20000 km2?
+
+MF_pts <- lapply(MF_pols, function(x){
+  n <- round(x$area/2e+4)
+  pts_sf <- st_sample(x, size = n)  #sample n points over the polygon
+  pts <- data.frame(lon = st_coordinates(pts_sf)[,1],
+                    lat = st_coordinates(pts_sf)[,2],
+                    species = x$species,
+                    used = 0,
+                    #assing date_time for the year-month combo
+                    ##briefly looked at hour in tracking data and it seemed to have a rather uniform distribution, so sample from all available on ECMWF-ERA inerim
+                    timestamp = as.POSIXct(strptime(paste(paste(x$yr,x$mn,sample(c(1:x$days_in_mn), n, replace = T), sep = "-"), 
+                                                          paste(sample(c("00","06","12","18"), n, replace = T),"00","00",sep = ":"), sep = " "),
+                                                    format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
+})
+
+#addd available point to the data
 
 
 
-#%>% 
-  
-  st_union()
-  #group_map(mcp)
-  group_map(concaveman)
-  
-
-#coordinates(MF) <-~ location.long + location.lat
-#proj4string(MF) <- wgs
-
-MF_ls <- split(MF, list(MF$year, MF$month), drop = T)
-MF_ls <- MF_ls[-which(lapply(MF_ls,nrow) < 3)] #remove groups with less than 3 points 
-
-
-mcps <- lapply(MF_ls, function(x){
-  pol <- x %>% 
-    spTransform(meters_proj) %>% 
-    mcp(x) #%>%  #calculate the mcp
-  
-}              
-)
-
-
-mcps <- lapply(MF_ls, function(x){
-  pol <- x %>% 
-    sp_transform(meters_proj) %>% 
-    mcp(x) #%>%  #calculate the mcp
-
-}              
-)
 
 #create move object to compare with the linestring
 library(move)
