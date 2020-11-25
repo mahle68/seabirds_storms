@@ -68,6 +68,7 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
     head <-NA}
   return(head)
 }
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 #open data: prepared by Sophie
 
@@ -75,35 +76,21 @@ data <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data
                  na.strings = c("NA",""), fileEncoding="latin1") %>% 
   mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   arrange(TripID,date_time)
-  
 
-
-# STEP 2: prepare alternative steps#####
+# STEP 1: prepare alternative steps#####
 
 #create a move object
 
 mv <- move(x = data$Longitude,y = data$Latitude,time = data$date_time, data = data, animal = data$TripID,proj = wgs)
 
-
-#for each species/flyway, thin the data, burstify, and produce alternative steps
-#create a move list
-
-#move_ls<-lapply(split(data,data$group),function(x){
-#  x<-as.data.frame(x)
-#  mv<-move(x = x$x,y = x$y,time = x$date_time,data = x,animal = x$unique_seg_id,proj = wgs)
-#  mv
-#})
-#move_ls <- move_ls[-2] #remove GFB
-
 start_time <- Sys.time()
 
-#used_av_ls_1hr <- lapply(move_ls,function(group){ #each group is a species/flyway combo
-  #group <- mv_OHB #use this as group
-  sp_obj_ls<-lapply(split(mv),function(trip){
+
+  sp_obj_ls_2<-lapply(split(mv),function(trip){
     
     #--STEP 1: thin the data to 1-hourly intervals
     trip_th<-trip%>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
+      thinTrackTime(interval = as.difftime(2, units='hours'),
                     tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     trip_th$selected <- c(as.character(trip_th@burstId),NA) #assign selected as a variable
@@ -155,6 +142,8 @@ start_time <- Sys.time()
   }) %>% 
     Filter(function(x) length(x) > 1, .) #remove segments with no observation (these have only one obs due to the assignment of segment id)
   
+  
+  
   #--STEP 4: estimate step length and turning angle distributions
   #put everything in one df
   bursted_df <- sp_obj_ls %>%  
@@ -172,7 +161,7 @@ start_time <- Sys.time()
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist.jpeg")
+  jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_1hr.jpeg")
    #X11();
    par(mfrow=c(1,2))
    hist(sl,freq=F,main="",xlab = "Step length (km)")
@@ -181,7 +170,7 @@ start_time <- Sys.time()
    
    hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
    plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-   mtext("Example of step length and turning angle distributions", side = 3, outer =T,line = -4, font = 2) 
+   mtext("Step length and turning angle distributions (1-hr)", side = 3, outer =T,line = -4, font = 2) 
    dev.off()
   
   #--STEP 5: produce alternative steps
@@ -245,10 +234,6 @@ Sys.time() - start_time
 used_alt_trip <- used_av_trip %>% 
   dplyr::select(-c("Latitude","Longitude", "accumulated_dist", "turningAngle_deg", "turningAngle_rad", "selected", "speed_kmh", "dtBefore_sec")) %>% 
   rename(Latitude = y, Longitude = x) 
-  # rowwise %>% 
-  # mutate_at(c("turning_angle", "step_length", "angleBirdWind", "windAzimuth", "windSpeed_kmh", "windDirection", "windSpeed_ms", "v_wind_interp", 
-  #             "u_wind_interp", "v_wind", "t", "travelled_distance_km", "DistColo"),
-  #           ~ ifelse(used == 0, NA, .))
 
 used_alt_trip[used_alt_trip$used == 0, c("turning_angle", "step_length", "angleBirdWind", "windAzimuth", "windSpeed_kmh", "windDirection", "windSpeed_ms", "v_wind_interp", 
                     "u_wind_interp", "v_wind", "t", "travelled_distance_km", "DistColo")] <- NA
@@ -269,4 +254,70 @@ points(current_point,col = "firebrick1", pch = 16, cex = 2)
 points(rnd_sp, col = "orange", pch = 16, cex = 1)
 points(used_point, col = "firebrick4", pch = 16, cex = 2)
 dev.off()
+
+# STEP 2: data exploration!#####
+
+#open annotated data (Sophie annotated it locally, because Movebank hasn't been able to connect to ECMWF for a month now)
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_allGPS_2010-2020_homo_R1h_TrackParam_Wind50kmh_alt_steps_WindAnnot.Rdata")
+
+#calculate wind support and crosswind
+Waal_R1_windParam <- Waal_R1_windParam %>% 
+  mutate(wind_support_ms = wind_support(u=u_wind_interp,v=v_wind_interp,heading=heading),
+         cross_wind_ms = cross_wind(u=u_wind_interp,v=v_wind_interp,heading=heading)) %>% 
+  mutate(wind_support_kmh = wind_support_ms * 3.6, #convert to kmh
+         cross_wind_kmh = cross_wind_ms * 3.6)
+
+
+#plot used vs available values
+
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_vs_used_km.jpeg", width = 15, height = 5, units = "in", res = 300)
+X11(width = 13, height = 4)
+par(mfrow= c(1,4), oma = c(0,0,3,0))
+for(i in c("windDirection", "windSpeed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
+  boxplot(Waal_R1_windParam[,i] ~ Waal_R1_windParam[,"used"], 
+          xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
+  axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
+}
+mtext("Tracks containing 50 km/h winds (n = 219)", side = 3, outer = T, cex = 1)
+dev.off()
+
+
+##################### only look at tracks with over 60 km/hr winds... doesnt change much. also try 70
+#get a summary of number of tracks with over a certain wind speed
+over_70 <- Waal_R1_windParam %>% 
+  filter(windSpeed_kmh >= 70) %>% 
+  summarize(ID = unique(TripID)) #149; was 219 with over 50
+
+Waal_R1_windParam_70 <- Waal_R1_windParam[Waal_R1_windParam$TripID %in% over_70$ID,]
+
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_vs_used_70.jpeg", width = 15, height = 5, units = "in", res = 300)
+X11(width = 13, height = 4)
+par(mfrow= c(1,4), oma = c(0,0,3,0))
+for(i in c("windDirection", "windSpeed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
+  boxplot(Waal_R1_windParam_70[,i] ~ Waal_R1_windParam_70[,"used"], 
+          xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
+  axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
+}
+mtext("Tracks containing 70 km/h winds (n = 33)", side = 3, outer = T, cex = 1)
+dev.off()
+
+#################### look at the mean wind speeds on each track. try mean over 40 (roughly the 3rd Qu.)
+means_over_40 <- Waal_R1_windParam %>% 
+  group_by(TripID) %>% 
+  summarise(mean_ws = mean(windSpeed_kmh)) %>% 
+  filter(mean_ws >= 40) #n = 18
+
+Waal_R1_windParam_mean_40 <- Waal_R1_windParam[Waal_R1_windParam$TripID %in% means_over_40$TripID,]
+
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_vs_used_mean_40.jpeg", width = 15, height = 5, units = "in", res = 300)
+X11(width = 13, height = 4)
+par(mfrow= c(1,4), oma = c(0,0,3,0))
+for(i in c("windDirection", "windSpeed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
+  boxplot(Waal_R1_windParam_mean_40[,i] ~ Waal_R1_windParam_mean_40[,"used"], 
+          xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
+  axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
+}
+mtext("Tracks with mean wind speed over 40 km/h (n = 18)", side = 3, outer = T, cex = 1)
+dev.off()
+
 

@@ -37,10 +37,14 @@ data_vis <- data %>% #data from 2009-2014
   st_as_sf(coords = c("longitude","latitude"),
            crs = wgs) 
 
-mapview(data_vis,zcol = "common_name")
+mapview(data_vis,zcol = "track_id")
 
+#summarise for n individuals and tracks
+data %>% 
+  group_by(common_name) %>% 
+  summarise(n_track = n_distinct(track_id))
 
-  #prep for movebank annotation request
+#prep for movebank annotation request
 
 data_mv <- data %>% 
   mutate(timestamp = paste(as.character(date_time),"000",sep = "."))
@@ -90,7 +94,8 @@ data_list <- list.files("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storm
 #----------------------------------------------------------------------------------
 # Movebank data (public data; owners not contacted)
 
-files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank", full.names = T)
+
+files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank",pattern = ".csv", full.names = T) # studies where birds were manipulated (magneitc field manipulations and dispacement) were removed
 
 data <- lapply(files, read.csv,stringsAsFactors = F) 
 
@@ -113,14 +118,35 @@ data_flt <- lapply(data, function(x){
 
 save(data_flt, file = "data_flt.RData")
 
-#data_vis <- data_flt %>% #data from 2008-2017 #dataset too large. crashes R (in laptop)
-#  st_as_sf(coords = c("location.long","location.lat"),
-#           crs = wgs) 
+#create a data frame containing colony coordinates. I looked these up on the papers cited on the Movebank study page
+colonies <- vector("list",8)
+names(colonies) <- unique(data_flt$study.name)
+colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$x <- 14.3719
+  colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$y <- 2
 
-#mapview(data_vis,zcol = "individual.taxon.canonical.name")
 
+
+
+#summary stats for number of individuals and tracks
+load ("data_flt.RData")
+
+data_flt %>% 
+  group_by(individual.taxon.canonical.name) %>% 
+  summarise(n_ind = n_distinct(individual.local.identifier))
+
+data_flt %>% 
+  group_by(study.name) %>% 
+  summarise(n_ind = n_distinct(individual.local.identifier))
+
+data_vis <- data_flt %>% #data from 2008-2017 #dataset too large. crashes R (in laptop)
+  st_as_sf(coords = c("location.long","location.lat"),
+           crs = wgs) 
+
+mapview(data_vis,zcol = "individual.taxon.canonical.name")
+mapview(data_vis[data_vis$individual.taxon.canonical.name == "Puffinus yelkouan",], zcol = "individual.local.identifier")
 
 #prep for movebank annotation request. over one million rows, so prep two files
+
 
 data_mv <- data_flt %>% 
   mutate(timestamp = paste(as.character(timestamp),"000",sep = "."))
