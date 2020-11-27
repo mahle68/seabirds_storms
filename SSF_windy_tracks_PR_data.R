@@ -123,6 +123,10 @@ windy_tracks <- lapply(split(data_an, data_an$scientific_name), function(x){ #ta
 
 # STEP 2: prepare alternative steps#####
 
+hrs <- 1 #how long should the steps be? temporally
+n <- 20 #how many alternative steps?
+
+
 move_ls<-lapply(windy_tracks,function(x){
   
   x <- x %>%
@@ -135,6 +139,111 @@ move_ls<-lapply(windy_tracks,function(x){
 
 #investage recording regime for each specie
 str(lapply(move_ls, timeLag, units = "hours"))
+
+#thin the track, calculate speed from one location to next, filter out stationary points... (flying vs sitting)  (replaces step 1 below)
+
+sp_ls_th <- lapply(move_ls, function(species){ 
+  lapply(split(species),function(track){ #this will have the filtered and bursted tracks
+    
+    #--STEP 1: thin the data
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(hrs, units='hours'),
+                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
+    
+    #--STEP 2: assign burst IDs (each chunk of track with n hour intervals is one burst... longer gaps will divide the brusts) 
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th$burst_id <- c(1,rep(NA,nrow(track_th)-1)) #define value for first row, assign the rest to NA
+    
+    if(nrow(track_th@data) == 1){
+      track_th@data$burst_id <- track_th$burst_id
+    } else {for(i in 2:nrow(track_th@data)){
+      if(i == nrow(track_th@data)){
+        track_th@data$burst_id[i]<-NA
+      } else {if(track_th@data[i-1,"selected"] == "selected"){
+        track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]
+      } else {
+        track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]+1 #change the burst-id if previous point is not selected
+      }
+      }
+    }
+    }
+    
+    #convert back to a move object (from move burst)
+    track_th <- as(track_th,"Move")
+    
+    #remove notSelected points
+    track_th <- track_th[track_th$selected == "selected" | is.na(track_th$selected),]
+    
+    
+    #--STEP 3: calculate step lengths and turning angles 
+    
+    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
+    burst_ls<-split(track_th,track_th$burst_id)
+    burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
+    
+    burst_ls<-lapply(burst_ls,function(burst){
+      burst$step_length<-c(distance(burst),NA) #
+      burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
+      burst$timelag <- c(timeLag(burst, units = "hours"), NA)
+      burst$speed <- c(speed(burst),NA)
+      
+      burst
+    })
+    
+    #put burst_ls into one dataframe
+    bursted_sp <- do.call(rbind,burst_ls) 
+    
+    #reassign values
+    
+    if(length(bursted_sp) >= 1){
+      bursted_sp$track<-track@idData$track_id
+      bursted_sp$species<-track@idData$scientific_name
+    }
+    
+    bursted_sp$track_id<-track@idData$track_id 
+    bursted_sp
+  }) %>% 
+    Filter(function(x) length(x) > 1, .) %>% #remove tracks with no observation
+    reduce(rbind)
+  
+})
+
+
+#remove zeros
+no_zeros <- lapply(sp_ls_th, function(x){ #for each species
+  
+  x[x$speed > 0 | is.na(x$speed),]
+})
+
+lapply(no_zeros, function(x){
+  X11(); par(mfrow = c(1,2))
+  hist(x$speed)
+  hist(x$timelag)
+})
+
+#make sure there are no 0 speeds
+summaries <- lapply(sp_ls_th, function(x){ #for each species
+  
+  x %>% 
+    as.data.frame() %>% 
+    group_by(species) %>% 
+    summarise(spd_min = min(speed, na.rm = T),
+              spd_1_quant = quantile(speed, na.rm = T, probs= 1),
+              spd_max = max(speed, na.rm = T),
+              tl_min = min(timelag, na.rm = T),
+              tl_max = max(timelag, na.rm = T))
+  
+  #X11(); par(mfrow = c(1,2))
+  #hist(x$speed)
+  #hist(x$timelag)
+  
+}) %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+  
+  
+#-------------------------------------------------
 
   mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
   
@@ -155,63 +264,65 @@ str(lapply(move_ls, timeLag, units = "hours"))
   
   start_time <- Sys.time()
   
-  used_av_ls_1hr <- parLapply(cl = mycl, X = move_ls,fun = function(species){ 
+used_av_ls <- parLapply(cl = mycl, X = move_ls,fun = function(species){ 
     
-  #used_av_ls_1hr <- lapply(move_ls, function(species){ 
-    sp_obj_ls<-lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted trackments
-      
-      #--STEP 1: thin the data to 1-hourly intervals
-      track_th <- track %>%
-        thinTrackTime(interval = as.difftime(1, units='hours'),
-                      tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
-      #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
-      track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-      track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
-      
-      if(nrow(track_th@data) == 1){
-        track_th@data$burst_id <- track_th$burst_id
-      } else {for(i in 2:nrow(track_th@data)){
-        
-        if(i== nrow(track_th@data)){
-          track_th@data$burst_id[i]<-NA
-        } else
-          if(track_th@data[i-1,"selected"] == "selected"){
-            track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]
-          } else {
-            track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]+1
-          }
-      }
-      }
-      #convert back to a move object (from move burst)
-      track_th <- as(track_th,"Move")
-      
-      #--STEP 3: calculate step lengths and turning angles 
-      #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-      burst_ls<-split(track_th,track_th$burst_id)
-      burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
-      
-      burst_ls<-lapply(burst_ls,function(burst){
-        burst$step_length<-c(distance(burst),NA) #
-        burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
-        burst
-      })
-      
-      #put burst_ls into one dataframe
-      bursted_sp <- do.call(rbind,burst_ls) 
-      
-      #reassign values
-      
-      if(length(bursted_sp) >= 1){
-        bursted_sp$track<-track@idData$track_id
-        bursted_sp$species<-track@idData$scientific_name
-      }
-      
-      bursted_sp$track_id<-track@idData$track_id 
-      bursted_sp
-    }) %>% 
-      Filter(function(x) length(x) > 1, .) #remove tracks with no observation (these have only one obs due to the assignment of trackment id)
+  #used_av_ls <- lapply(move_ls, function(species){ 
+  sp_obj_ls<-lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted trackments
     
-    #--STEP 4: estimate step length and turning angle distributions
+    #--STEP 1: thin the data
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(hrs, units='hours'),
+                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
+    
+    #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
+    
+    if(nrow(track_th@data) == 1){
+      track_th@data$burst_id <- track_th$burst_id
+    } else {for(i in 2:nrow(track_th@data)){
+      
+      if(i== nrow(track_th@data)){
+        track_th@data$burst_id[i]<-NA
+      } else
+        if(track_th@data[i-1,"selected"] == "selected"){
+          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]
+        } else {
+          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]+1
+        }
+    }
+    }
+    #convert back to a move object (from move burst)
+    track_th <- as(track_th,"Move")
+    
+    #--STEP 3: calculate step lengths and turning angles 
+    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
+    burst_ls<-split(track_th,track_th$burst_id)
+    burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
+    
+    burst_ls<-lapply(burst_ls,function(burst){
+      burst$step_length<-c(distance(burst),NA) #
+      burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
+      burst
+    })
+    
+    #put burst_ls into one dataframe
+    bursted_sp <- do.call(rbind,burst_ls) 
+    
+    #reassign values
+    
+    if(length(bursted_sp) >= 1){
+      bursted_sp$track<-track@idData$track_id
+      bursted_sp$species<-track@idData$scientific_name
+    }
+    
+    bursted_sp$track_id<-track@idData$track_id 
+    bursted_sp
+  }) %>% 
+    Filter(function(x) length(x) > 1, .) #remove tracks with no observation (these have only one obs due to the assignment of trackment id)
+    
+    
+#--STEP 4: estimate step length and turning angle distributions
     #put everything in one df
     bursted_df <- sp_obj_ls %>%  
       reduce(rbind) %>% 
@@ -238,7 +349,7 @@ str(lapply(move_ls, timeLag, units = "hours"))
     
     hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]), freq=F, main="",xlab="Turning angles (radians)")
     plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-    mtext(paste0("Step length and turning angle distributions (1-hr) ",bursted_df$species), side = 3, outer =T,line = -3)
+    mtext(paste0("Step length and turning angle distributions (", hrs, "-hr)", bursted_df$species), side = 3, outer =T,line = -3)
     dev.off()
     
     
@@ -256,9 +367,9 @@ str(lapply(move_ls, timeLag, units = "hours"))
           previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
           used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
           
-          #randomly generate 20 step lengths and turning angles
-          rta <- as.vector(rvonmises(n = 20, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-          rsl <- rgamma(n = 20, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+          #randomly generate n step lengths and turning angles
+          rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+          rsl <- rgamma(n = n, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
           
           #calculate bearing of previous point
           #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
@@ -277,10 +388,10 @@ str(lapply(move_ls, timeLag, units = "hours"))
           
           #put used and available points together
           df <- used_point@data %>%  
-            slice(rep(row_number(),21)) %>% #paste each row 20 times for the used and alternative steps
+            slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
             mutate(location.long = c(head(location.long,1),rnd_sp@coords[,1]),
                    location.lat = c(head(location.lat,1),rnd_sp@coords[,2]),
-                   used = c(1,rep(0,20)))  %>% #one hour after the start point of the step
+                   used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
             rowwise() %>% 
             mutate(heading = NCEP.loxodrome.na(lat1=current_point$location.lat,lat2=location.lat,lon1=current_point$location.long,lon2= location.long)) %>% 
             dplyr::select(-c("u10m", "t2m", "press", "sst", "v10m", "X", "selected")) %>% 
@@ -305,7 +416,7 @@ str(lapply(move_ls, timeLag, units = "hours"))
   stopCluster(mycl)
 
 #prepare to submit to Movebank
-used_av_all_1hr <- lapply(used_av_ls_1hr, function(x){
+used_av_all <- lapply(used_av_ls, function(x){
   x %>% 
     mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) %>% 
     as.data.frame()
@@ -313,19 +424,19 @@ used_av_all_1hr <- lapply(used_av_ls_1hr, function(x){
   reduce(rbind)
 # 
 
-save(used_av_all_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
+save(used_av_all, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
 
  #have a look
  X11();par(mfrow= c(1,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
  maps::map("world",fil = TRUE,col = "grey85", border=NA, ylim = c(-65,-10), xlim = c(-60,30)) 
- points(used_av_all_1hr[used_av_all_1hr$used == 0,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "gray55")
- points(used_av_all_1hr[used_av_all_1hr$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "orange")
- points(used_av_all_1hr[used_av_all_1hr$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all_1hr$color)
+ points(used_av_all[used_av_all$used == 0,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "gray55")
+ points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "orange")
+ points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
 
- points(used_av_all_1hr[,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all_1hr$color)
+ points(used_av_all[,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
  
- used_av_all_1hr <- used_av_all_1hr %>% 
+ used_av_all <- used_av_all %>% 
    mutate(color = ifelse(species == "Ardenna gravis", "blue",
                          ifelse(species == "Diomedea dabbenena", "green",
                                  ifelse(species == "Phoebetria fusca" , "orange",
@@ -333,21 +444,21 @@ load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_
                                                ifelse(species == "Pterodroma mollis", "pink", "purple"))))))
 
  
-d <- used_av_all_1hr
+d <- used_av_all
 coordinates(d) <- ~ location.long + location.lat
 proj4string(d) <- wgs
 
 points(d[d$used == 1,], pch = 16, cex = 0.2, col = d$color)
 
 #row numbers are over a million, so do separate into two dfs for annotation
-colnames(used_av_all_1hr)[c(3,4)] <- c("location-long","location-lat") #rename columns to match movebank format
+colnames(used_av_all)[c(3,4)] <- c("location-long","location-lat") #rename columns to match movebank format
 
-df_1 <- used_av_all_1hr %>% 
-  slice(1:(nrow(used_av_all_1hr)/2)) #separate the first half of the dataset
+df_1 <- used_av_all %>% 
+  slice(1:(nrow(used_av_all)/2)) #separate the first half of the dataset
 write.csv(df_1, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_PR_all_spp_1hr_1.csv")
 
-df_2 <- used_av_all_1hr %>% 
-  slice(nrow(used_av_all_1hr)/2+1:nrow(used_av_all_1hr))
+df_2 <- used_av_all %>% 
+  slice(nrow(used_av_all)/2+1:nrow(used_av_all))
 write.csv(df_2, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_PR_all_spp_1hr_2.csv")
   
 
@@ -383,14 +494,14 @@ ann_cmpl$species <- factor(ann_cmpl$species)
 
 
 #plot
-X11(width = 15, height = 10);par(mfrow= c(4,1), oma = c(0,0,3,0))
-for(i in c("wind_support_kmh", "cross_wind_kmh","wind_speed_kmh", "air_pr")){
+X11(width = 15, height = 10);par(mfrow= c(3,1), oma = c(0,0,3,0))
+for(i in c("wind_support_kmh", "cross_wind_kmh","wind_speed_kmh")){
 #  for(j in c("tmpz", "twz")){ 
     
     boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-    if(i == "wind_support_kmh"){
+    
       legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-    }
+    
     boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
             xaxt = "n", add = T, boxfill = "orange",
             boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
