@@ -301,14 +301,17 @@ save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms
 #plots
 
 #boxplots
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/Used_avail_WAAL_2hr.jpeg", width = 10, height = 4, units = "in", res = 300)
 X11(width = 13, height = 4)
 par(mfrow= c(1,3), oma = c(0,0,3,0))
-for(i in c("wind_speed_kmh", "cross_wind_kmh", "wind_support_kmh", "")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
+for(i in c("wind_speed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
   boxplot(ann_cmpl[,i] ~ ann_cmpl[,"used"], 
           xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
   axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
 }
 mtext("Tracks containing 50 km/h winds- 2hrly steps", side = 3, outer = T, cex = 1)
+
+dev.off()
 
 #density plots
 X11()

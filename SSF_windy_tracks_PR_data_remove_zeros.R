@@ -2,11 +2,6 @@
 #Elham Nourani, PhD. Nov. 23. 2020. Radolfzell am Bodensee, Germany
 #tried filtering for tracks that contain wind speeds equal to or higher than the thrid quartile. turns out all tracks do. 
 #try filtering for tracks with a mean wind speed equal to or greater than the third quartile for the species.... decided to just go with all the tracks for annotation phase
-#Tried this in SSF_windy_tracks_PR_data_no_zeros.R: thin the track, calculate speed from one location to next, filter out stationary points... (flying vs sitting)  (does not replaces step 1 below if removal of stationary points 
-# impacts the timelag. here I'm evening out the timelag to make sure that the speeds that I calculate are comparable. But then because points with lower speeds are removed, 
-#the time lags might change again. But if only removing points with speed of zero, nothing should change, right?)
-
-
 
 library(tidyverse)
 library(move)
@@ -126,10 +121,9 @@ windy_tracks <- lapply(split(data_an, data_an$scientific_name), function(x){ #ta
 
 #Just use the whole data, since all tracks contain winds higher than the 3rd quartile
 
-# STEP 2: thin the data and generate alternative steps #####
+# STEP 2: thin the data and remove stationary points#####
 
-hrs <- 2 #how long should the steps be? temporally
-n <- 20 #how many alternative steps?
+hrs <- 1 #how long should the steps be? temporally
 
 #convert to move stack list. If working on one species, convert to move object
 move_ls<-lapply(windy_tracks,function(x){
@@ -145,31 +139,13 @@ move_ls<-lapply(windy_tracks,function(x){
 #investage recording regime for each specie
 str(lapply(move_ls, timeLag, units = "hours"))
 
+#thin the track, calculate speed from one location to next, filter out stationary points... (flying vs sitting)  (does not replaces step 1 below if removal of stationary points 
+# impacts the timelag. here I'm evening out the timelag to make sure that the speeds that I calculate are comparable. But then because points with lower speeds are removed, 
+#the time lags might change again. But if only removing points with speed of zero, nothing should change, right?)
 
-
-mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
-
-clusterExport(mycl, c("move_ls", "n", "hrs", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(tidyverse)
-  library(sf)
-  library(raster)
-  library(move)
-  library(sp)
-  library(circular)
-  library(CircStats)
-  library(fitdistrplus)
-  library(tidyr)
-})
-
-start_time <- Sys.time()
-
-sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each species,
-  
- #sp_ls <- lapply(split(species)[[c(1:2)]],function(track){ #this will have the filtered and bursted tracks
-    sp_ls <- lapply(lapply(split(species), "[", 11:12),function(track){
-      
+sp_ls_th <- lapply(move_ls, function(species){ 
+  lapply(split(species),function(track){ #this will have the filtered and bursted tracks
+    
     #------ thin the data
     track_th <- track %>%
       thinTrackTime(interval = as.difftime(hrs, units='hours'),
@@ -177,7 +153,6 @@ sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each spec
     
     #------ assign burst IDs (each chunk of track with n hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    
     track_th$burst_id <- c(1,rep(NA,nrow(track_th)-1)) #define value for first row, assign the rest to NA
     
     if(nrow(track_th@data) == 1){
@@ -206,7 +181,7 @@ sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each spec
     burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
     
     burst_ls <- lapply(burst_ls,function(burst){
-      burst$step_length<-c(distance(burst),NA)
+      burst$step_length<-c(distance(burst),NA) #
       burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
       burst$timelag <- c(timeLag(burst, units = "hours"), NA)
       burst$speed <- c(speed(burst),NA)
@@ -219,40 +194,67 @@ sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each spec
     #------ put burst_ls into one dataframe
     bursted_sp <- do.call(rbind,burst_ls) 
     
-    #------ remove speeds of 0. keep NA values. this doesnt really make sense, because it messes up the step-wise nature of the data. maybe remove when isolating steps
-    #bursted_sp <- bursted_sp[bursted_sp$speed > 0 | is.na(bursted_sp$speed),]
+    #------ remove speeds of 0. keep NA values
+    bursted_sp <- bursted_sp[bursted_sp$speed > 0 | is.na(bursted_sp$speed),]
     
     #------ reassign values
     if(length(bursted_sp) >= 1){
-      bursted_sp$track_id<-track@idData$track_id
-      bursted_sp$species<-track@idData$common_name
+      bursted_sp$track<-track@idData$track_id
+      bursted_sp$species<-track@idData$scientific_name
     }
     
-    #bursted_sp$track_id<-track@idData$track_id 
+    bursted_sp$track_id<-track@idData$track_id 
     bursted_sp
   }) %>% 
     Filter(function(x) length(x) > 1, .) %>% #remove tracks with no observation
     reduce(rbind)
   
-  #------ remove track. it will be created again later
-  rm(track)
+})
 
-  #------ estimate step length and turning angle distributions. for all tracks within each species
+save(sp_ls_th, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/PR_no_zeros.RData")
+
+# STEP 3: generate alternative points#####
+
+n <- 20 #how many alternative steps?
+
+mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
+  
+clusterExport(mycl, c("sp_ls_th", "n", "hrs", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+    library(tidyverse)
+    library(sf)
+    library(raster)
+    library(move)
+    library(sp)
+    library(circular)
+    library(CircStats)
+    library(fitdistrplus)
+    library(tidyr)
+})
+  
+start_time <- Sys.time()
+  
+used_av_ls <- parLapply(cl = mycl, X = sp_ls_th[[5]],fun = function(species){ 
+  
+#used_av_ls <- lapply(sp_ls_th, function(species){ 
+  #------ estimate step length and turning angle distributions
   #put everything in one df
-  bursted_df <- sp_ls %>% 
+  bursted_df <- species %>% 
     as.data.frame() %>%
+    #filter(step_length < 500000) %>% #filter out points with over 500 km step length. outliers 
     dplyr::select(-c("coords.x1","coords.x2"))
   
-  #------ estimate von Mises parameters for turning angles
+  #estimate von Mises parameters for turning angles
   #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
   mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
   kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
   
-  #------ estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
+  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
   sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
-  #------ plot
+  #plot
   jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_", hrs, "hr_", n, "n_", bursted_df$species[1],".jpeg"))
   #X11()
   par(mfrow=c(1,2))
@@ -266,11 +268,22 @@ sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each spec
   dev.off()
   
   #------ produce alternative steps
-  used_av_track <- lapply(split(sp_ls, sp_ls$track_id), function(track){ #for each track,
+  used_av_track <- lapply(split(species, species$track_id), function(track){ #for each track,
+    
+    #remove bursts with less than 3 points
+    # track <- Filter(function(x) length(x) >= 3, burst_ls) 
+    # birsts_to_delete <- track %>%
+    #   as.data.frame() %>% 
+    #   group_by(burst_id) %>% 
+    #   filter(n() < 3) %>% 
+    #   summarise(burst_id = unique(burst_id))
+    
+    burst_no <- as.numeric(as.data.frame(table(track$burst_id))[as.data.frame(table(track$burst_id))$Freq < 3,"Var1"])
+    track <- track[track$burst_id != burst_no,]
     
     used_av_burst <- lapply(split(track,track$burst_id),function(burst){ #for each burst,
       
-      #------ assign unique step id
+      #assign unique step id
       burst$step_id <- 1:nrow(burst)
       
       used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
@@ -279,26 +292,26 @@ sp_ls_th <- parLapply(cl = mycl, move_ls[[2]], function(species){ #for each spec
         previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-        #------ randomly generate n step lengths and turning angles
+        #randomly generate n step lengths and turning angles
         rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
         rsl <- rgamma(n = n, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
-        #------ calculate bearing of previous point
+        #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
         prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
                                           previous_point@coords[,1], current_point@coords[,1])
         
-        #------ find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
+        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
         current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
         rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
         
-        #------ covnert back to lat-lon proj
+        #covnert back to lat-lon proj
         rnd_sp<-rnd
         coordinates(rnd_sp)<-~lon+lat
         proj4string(rnd_sp)<-meters_proj
         rnd_sp<-spTransform(rnd_sp,wgs)
         
-        #------ put used and available points together
+        #put used and available points together
         df <- used_point@data %>%  
           slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
           mutate(location.long = c(head(location.long,1),rnd_sp@coords[,1]),
@@ -327,32 +340,28 @@ Sys.time() - start_time
 
 stopCluster(mycl)
 
-# STEP 3: annotation #####
-
-#------prepare to submit to Movebank
+#prepare to submit to Movebank
 used_av_all <- lapply(used_av_ls, function(x){
   x %>% 
     mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) %>% 
     as.data.frame()
 }) %>% 
   reduce(rbind)
+# 
 
+save(used_av_all, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
 
+ #have a look
+ X11();par(mfrow= c(1,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
+ maps::map("world",fil = TRUE,col = "grey85", border=NA, ylim = c(-65,-10), xlim = c(-60,30)) 
+ points(used_av_all[used_av_all$used == 0,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "gray55")
+ points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "orange")
+ points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
 
-#save(used_av_all, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/used_av_1hr_PR.RData")
-save(used_av_all, 
-     file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/used_av_PR_", hrs, "hr_", n, "n_", bursted_df$species[1],".RData"))
-
-#have a look
-X11();par(mfrow= c(1,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
-maps::map("world",fil = TRUE,col = "grey85", border=NA, ylim = c(-65,-10), xlim = c(-60,30)) 
-points(used_av_all[used_av_all$used == 0,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "gray55")
-points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = "orange")
-points(used_av_all[used_av_all$used == 1,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
-
-points(used_av_all[,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
+ points(used_av_all[,c("location.long","location.lat")], pch = 16, cex = 0.2, col = used_av_all$color)
  
-used_av_all <- used_av_all %>% 
+ used_av_all <- used_av_all %>% 
    mutate(color = ifelse(species == "Ardenna gravis", "blue",
                          ifelse(species == "Diomedea dabbenena", "green",
                                  ifelse(species == "Phoebetria fusca" , "orange",
@@ -378,7 +387,7 @@ df_2 <- used_av_all %>%
 write.csv(df_2, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_PR_all_spp_1hr_2.csv")
   
 
-# STEP 4: Exploration of annotated data#####
+# STEP 3: Exploration of annotated data#####
 #open annotated data:
 #open annotated data and add wind support and crosswind
 ann_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/Peter Ryan/ssf",pattern = ".csv", full.names = T) 
