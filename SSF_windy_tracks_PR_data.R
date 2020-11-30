@@ -1,7 +1,7 @@
 #script for exploration of seabird data to find their response to strong wind conditions
 #Elham Nourani, PhD. Nov. 23. 2020. Radolfzell am Bodensee, Germany
 #tried filtering for tracks that contain wind speeds equal to or higher than the thrid quartile. turns out all tracks do. 
-#try filtering for tracks with a mean wind speed equal to or greater than the third quartile for the species.
+#try filtering for tracks with a mean wind speed equal to or greater than the third quartile for the species.... decided to just go with all the tracks for annotation phase
 
 library(tidyverse)
 library(move)
@@ -121,12 +121,11 @@ windy_tracks <- lapply(split(data_an, data_an$scientific_name), function(x){ #ta
 
 #Just use the whole data, since all tracks contain winds higher than the 3rd quartile
 
-# STEP 2: prepare alternative steps#####
+# STEP 2: thin the data and remove stationary points#####
 
 hrs <- 1 #how long should the steps be? temporally
-n <- 20 #how many alternative steps?
 
-
+#convert to move stack list. If working on one species, convert to move object
 move_ls<-lapply(windy_tracks,function(x){
   
   x <- x %>%
@@ -140,17 +139,19 @@ move_ls<-lapply(windy_tracks,function(x){
 #investage recording regime for each specie
 str(lapply(move_ls, timeLag, units = "hours"))
 
-#thin the track, calculate speed from one location to next, filter out stationary points... (flying vs sitting)  (replaces step 1 below)
+#thin the track, calculate speed from one location to next, filter out stationary points... (flying vs sitting)  (does not replaces step 1 below if removal of stationary points 
+# impacts the timelag. here I'm evening out the timelag to make sure that the speeds that I calculate are comparable. But then because points with lower speeds are removed, 
+#the time lags might change again. But if only removing points with speed of zero, nothing should change, right?)
 
 sp_ls_th <- lapply(move_ls, function(species){ 
   lapply(split(species),function(track){ #this will have the filtered and bursted tracks
     
-    #--STEP 1: thin the data
+    #------ thin the data
     track_th <- track %>%
       thinTrackTime(interval = as.difftime(hrs, units='hours'),
                     tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
     
-    #--STEP 2: assign burst IDs (each chunk of track with n hour intervals is one burst... longer gaps will divide the brusts) 
+    #------ assign burst IDs (each chunk of track with n hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th$burst_id <- c(1,rep(NA,nrow(track_th)-1)) #define value for first row, assign the rest to NA
     
@@ -168,33 +169,35 @@ sp_ls_th <- lapply(move_ls, function(species){
     }
     }
     
-    #convert back to a move object (from move burst)
+    #------ convert back to a move object (from move burst)
     track_th <- as(track_th,"Move")
     
-    #remove notSelected points
+    #------ remove notSelected points
     track_th <- track_th[track_th$selected == "selected" | is.na(track_th$selected),]
     
-    
-    #--STEP 3: calculate step lengths and turning angles 
-    
+    #------ calculate step lengths and turning angles 
     #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
     burst_ls<-split(track_th,track_th$burst_id)
     burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
     
-    burst_ls<-lapply(burst_ls,function(burst){
+    burst_ls <- lapply(burst_ls,function(burst){
       burst$step_length<-c(distance(burst),NA) #
       burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
       burst$timelag <- c(timeLag(burst, units = "hours"), NA)
       burst$speed <- c(speed(burst),NA)
       
+      burst <- burst[burst$step_length < 500000 | is.na(burst$step_length),] #filter out points with over 500 km step length. outliers 
+        
       burst
     })
     
-    #put burst_ls into one dataframe
+    #------ put burst_ls into one dataframe
     bursted_sp <- do.call(rbind,burst_ls) 
     
-    #reassign values
+    #------ remove speeds of 0. keep NA values
+    bursted_sp <- bursted_sp[bursted_sp$speed > 0 | is.na(bursted_sp$speed),]
     
+    #------ reassign values
     if(length(bursted_sp) >= 1){
       bursted_sp$track<-track@idData$track_id
       bursted_sp$species<-track@idData$scientific_name
@@ -209,47 +212,15 @@ sp_ls_th <- lapply(move_ls, function(species){
 })
 
 
-#remove zeros
-no_zeros <- lapply(sp_ls_th, function(x){ #for each species
-  
-  x[x$speed > 0 | is.na(x$speed),]
-})
+# STEP 3: generate alternative points#####
 
-lapply(no_zeros, function(x){
-  X11(); par(mfrow = c(1,2))
-  hist(x$speed)
-  hist(x$timelag)
-})
+n <- 20 #how many alternative steps?
 
-#make sure there are no 0 speeds
-summaries <- lapply(sp_ls_th, function(x){ #for each species
+mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
   
-  x %>% 
-    as.data.frame() %>% 
-    group_by(species) %>% 
-    summarise(spd_min = min(speed, na.rm = T),
-              spd_1_quant = quantile(speed, na.rm = T, probs= 1),
-              spd_max = max(speed, na.rm = T),
-              tl_min = min(timelag, na.rm = T),
-              tl_max = max(timelag, na.rm = T))
-  
-  #X11(); par(mfrow = c(1,2))
-  #hist(x$speed)
-  #hist(x$timelag)
-  
-}) %>% 
-  reduce(rbind) %>% 
-  as.data.frame()
+clusterExport(mycl, c("sp_ls_th", "n", "hrs", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
 
-  
-  
-#-------------------------------------------------
-
-  mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
-  
-  clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
-  
-  clusterEvalQ(mycl, {
+clusterEvalQ(mycl, {
     library(dplyr)
     library(purrr)
     library(sf)
@@ -260,160 +231,114 @@ summaries <- lapply(sp_ls_th, function(x){ #for each species
     library(CircStats)
     library(fitdistrplus)
     library(tidyr)
-  })
+})
   
-  start_time <- Sys.time()
+start_time <- Sys.time()
   
-used_av_ls <- parLapply(cl = mycl, X = move_ls,fun = function(species){ 
+used_av_ls <- parLapply(cl = mycl, X = sp_ls_th[[5]],fun = function(species){ 
+  
+#used_av_ls <- lapply(sp_ls_th, function(species){ 
+  #------ estimate step length and turning angle distributions
+  #put everything in one df
+  bursted_df <- species %>% 
+    as.data.frame() %>%
+    #filter(step_length < 500000) %>% #filter out points with over 500 km step length. outliers 
+    dplyr::select(-c("coords.x1","coords.x2"))
+  
+  #estimate von Mises parameters for turning angles
+  #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
+  mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
+  kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
+  
+  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
+  sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
+  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
+  
+  #plot
+  jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_", hrs, "hr_", n, "n_", bursted_df$species[1],".jpeg"))
+  #X11()
+  par(mfrow=c(1,2))
+  hist(sl,freq=F,main="",xlab = "Step length (km)")
+  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
+  
+  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]), freq=F, main="",xlab="Turning angles (radians)")
+  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  mtext(paste0("Step length and turning angle distributions (", hrs, "-hr) ", bursted_df$species[1]), side = 3, outer = T,line = -3, font = 2)
+  dev.off()
+  
+  #------ produce alternative steps
+  used_av_track <- lapply(split(species, species$track_id), function(track){ #for each track,
     
-  #used_av_ls <- lapply(move_ls, function(species){ 
-  sp_obj_ls<-lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted trackments
+    #remove bursts with less than 3 points
+    # track <- Filter(function(x) length(x) >= 3, burst_ls) 
+    # birsts_to_delete <- track %>%
+    #   as.data.frame() %>% 
+    #   group_by(burst_id) %>% 
+    #   filter(n() < 3) %>% 
+    #   summarise(burst_id = unique(burst_id))
     
-    #--STEP 1: thin the data
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(hrs, units='hours'),
-                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
+    burst_no <- as.numeric(as.data.frame(table(track$burst_id))[as.data.frame(table(track$burst_id))$Freq < 3,"Var1"])
+    track <- track[track$burst_id != burst_no,]
     
-    #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
-    
-    if(nrow(track_th@data) == 1){
-      track_th@data$burst_id <- track_th$burst_id
-    } else {for(i in 2:nrow(track_th@data)){
+    used_av_burst <- lapply(split(track,track$burst_id),function(burst){ #for each burst,
       
-      if(i== nrow(track_th@data)){
-        track_th@data$burst_id[i]<-NA
-      } else
-        if(track_th@data[i-1,"selected"] == "selected"){
-          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]
-        } else {
-          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]+1
-        }
-    }
-    }
-    #convert back to a move object (from move burst)
-    track_th <- as(track_th,"Move")
-    
-    #--STEP 3: calculate step lengths and turning angles 
-    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-    burst_ls<-split(track_th,track_th$burst_id)
-    burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
-    
-    burst_ls<-lapply(burst_ls,function(burst){
-      burst$step_length<-c(distance(burst),NA) #
-      burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
-      burst
-    })
-    
-    #put burst_ls into one dataframe
-    bursted_sp <- do.call(rbind,burst_ls) 
-    
-    #reassign values
-    
-    if(length(bursted_sp) >= 1){
-      bursted_sp$track<-track@idData$track_id
-      bursted_sp$species<-track@idData$scientific_name
-    }
-    
-    bursted_sp$track_id<-track@idData$track_id 
-    bursted_sp
-  }) %>% 
-    Filter(function(x) length(x) > 1, .) #remove tracks with no observation (these have only one obs due to the assignment of trackment id)
-    
-    
-#--STEP 4: estimate step length and turning angle distributions
-    #put everything in one df
-    bursted_df <- sp_obj_ls %>%  
-      reduce(rbind) %>% 
-      as.data.frame() %>%
-      filter(step_length < 500000) %>% #filter out points with over 500 km step length. outliers 
-      dplyr::select(-c("coords.x1","coords.x2"))
-    
-    #estimate von Mises parameters for turning angles
-    #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-    mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-    kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-    
-    #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-    sl<-bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
-    fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
-    
-    #plot
-    jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_1hr_", bursted_df$species,".jpeg"))
-    #X11()
-    par(mfrow=c(1,2))
-    hist(sl,freq=F,main="",xlab = "Step length (km)")
-    plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                            rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-    
-    hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]), freq=F, main="",xlab="Turning angles (radians)")
-    plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-    mtext(paste0("Step length and turning angle distributions (", hrs, "-hr)", bursted_df$species), side = 3, outer =T,line = -3)
-    dev.off()
-    
-    
-    #--STEP 5: produce alternative steps
-    used_av_track <- lapply(sp_obj_ls, function(track){ #for each track
+      #assign unique step id
+      burst$step_id <- 1:nrow(burst)
       
-      used_av_burst <- lapply(split(track,track$burst_id),function(burst){ #for each burst,
+      used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
         
-        #assign unique step id
-        burst$step_id <- 1:nrow(burst)
+        current_point<- burst[this_point,]
+        previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
+        used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-        used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
-          
-          current_point<- burst[this_point,]
-          previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
-          used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
-          
-          #randomly generate n step lengths and turning angles
-          rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-          rsl <- rgamma(n = n, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
-          
-          #calculate bearing of previous point
-          #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
-          prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
+        #randomly generate n step lengths and turning angles
+        rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+        rsl <- rgamma(n = n, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+        
+        #calculate bearing of previous point
+        #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
+        prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
                                           previous_point@coords[,1], current_point@coords[,1])
-          
-          #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
-          current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
-          rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-          
-          #covnert back to lat-lon proj
-          rnd_sp<-rnd
-          coordinates(rnd_sp)<-~lon+lat
-          proj4string(rnd_sp)<-meters_proj
-          rnd_sp<-spTransform(rnd_sp,wgs)
-          
-          #put used and available points together
-          df <- used_point@data %>%  
-            slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
-            mutate(location.long = c(head(location.long,1),rnd_sp@coords[,1]),
-                   location.lat = c(head(location.lat,1),rnd_sp@coords[,2]),
-                   used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
-            rowwise() %>% 
-            mutate(heading = NCEP.loxodrome.na(lat1=current_point$location.lat,lat2=location.lat,lon1=current_point$location.long,lon2= location.long)) %>% 
-            dplyr::select(-c("u10m", "t2m", "press", "sst", "v10m", "X", "selected")) %>% 
-            as.data.frame()
-          
-          df[df$used == 0, c("wind_speed_ms", "wind_speed_kmh", "delta_t", "step_length", "turning_angle")] <- NA
-          df
-          
-        }) %>% 
-          reduce(rbind)
-        used_av_step
+        
+        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
+        current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
+        rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
+        
+        #covnert back to lat-lon proj
+        rnd_sp<-rnd
+        coordinates(rnd_sp)<-~lon+lat
+        proj4string(rnd_sp)<-meters_proj
+        rnd_sp<-spTransform(rnd_sp,wgs)
+        
+        #put used and available points together
+        df <- used_point@data %>%  
+          slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
+          mutate(location.long = c(head(location.long,1),rnd_sp@coords[,1]),
+                 location.lat = c(head(location.lat,1),rnd_sp@coords[,2]),
+                 used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
+          rowwise() %>% 
+          mutate(heading = NCEP.loxodrome.na(lat1=current_point$location.lat,lat2=location.lat,lon1=current_point$location.long,lon2= location.long)) %>% 
+          dplyr::select(-c("u10m", "t2m", "press", "sst", "v10m", "X", "selected")) %>% 
+          as.data.frame()
+        
+        df[df$used == 0, c("wind_speed_ms", "wind_speed_kmh", "delta_t", "step_length", "turning_angle")] <- NA
+        df
+        
       }) %>% 
         reduce(rbind)
-      used_av_burst
+      used_av_step
     }) %>% 
       reduce(rbind)
-    used_av_track
-  })
-  
-  Sys.time() - start_time #22 min
-  
-  stopCluster(mycl)
+    used_av_burst
+  }) %>% 
+    reduce(rbind)
+  used_av_track
+})
+
+Sys.time() - start_time
+
+stopCluster(mycl)
 
 #prepare to submit to Movebank
 used_av_all <- lapply(used_av_ls, function(x){
