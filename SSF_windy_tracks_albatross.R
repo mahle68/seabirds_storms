@@ -316,8 +316,8 @@ dev.off()
 #density plots
 X11()
 
-plot(density(ann_cmpl[ann_cmpl$used == 1,"wind_support_kmh"]))
-lines(density(ann_cmpl[ann_cmpl$used == 0,"wind_support_kmh"]), col= "grey")
+plot(density(ann_cmpl[ann_cmpl$used == 0,"wind_support_kmh"]), col= "grey")
+lines(density(ann_cmpl[ann_cmpl$used == 1,"wind_support_kmh"]), col = "orange")
 
 plot(density(ann_cmpl[ann_cmpl$used == 1,"cross_wind_kmh"]))
 lines(density(ann_cmpl[ann_cmpl$used == 0,"cross_wind_kmh"]), col= "grey")
@@ -325,8 +325,9 @@ lines(density(ann_cmpl[ann_cmpl$used == 0,"cross_wind_kmh"]), col= "grey")
 plot(density(ann_cmpl[ann_cmpl$used == 1,"wind_speed_kmh"]), col= "red")
 lines(density(ann_cmpl[ann_cmpl$used == 0,"wind_speed_kmh"]), col= "blue")
 
-hist(ann_cmpl[ann_cmpl$used == 1,"wind_support_kmh"])
-hist(ann_cmpl[ann_cmpl$used == 0,"wind_speed_kmh"])
+
+hist(ann_cmpl[ann_cmpl$used == 0,"wind_support_kmh"], col = "yellow", freq = F)
+hist(ann_cmpl[ann_cmpl$used == 1,"wind_support_kmh"], add= T, freq = F)
 
 # STEP 3: analysis#####
 
@@ -348,6 +349,9 @@ all_data <- ann_cmpl %>%
 form1 <- formula(used ~ wind_speed_kmh_z + cross_wind_kmh_z + wind_support_kmh_z +  
                    strata(stratum))
 m1 <- clogit(form1, data = all_data)
+
+
+
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------
 ############ one-hourly data

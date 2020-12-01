@@ -118,13 +118,33 @@ data_flt <- lapply(data, function(x){
 
 save(data_flt, file = "data_flt.RData")
 
+
+#convert to move objects
+mv_ls <- lapply(split(data_flt,data_flt$individual.taxon.canonical.name),function(x){
+  
+  x <- x %>%
+    arrange(individual.local.identifier,timestamp) %>% 
+    as.data.frame()
+  
+  mv <- move(x = x$location.long, y = x$location.lat,time = x$timestamp, data = x, animal = x$individual.local.identifier, proj = wgs)
+  mv
+})
+
+
 #create a data frame containing colony coordinates. I looked these up on the papers cited on the Movebank study page
 colonies <- vector("list",8)
 names(colonies) <- unique(data_flt$study.name)
-colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$x <- 14.3719
-  colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$y <- 2
+colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$x <- 14.37
+  colonies$`Chick-rearing movements of Yelkouan Shearwaters 2012-2014 (BirdLife Malta)`$y <- 35.99
+  colonies$`Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)`$x <- -32.42
+  colonies$`Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)`$y <- -3.86
+  colonies$`Free-ranging foraging trips of Manx shearwaters`$x <- 
+    colonies$`Free-ranging foraging trips of Manx shearwaters`$y <- 
 
-
+#try sophie's function for the Yelkouan shearwater
+source("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/function_SplitTrips.R")
+dd <- SplitTrips(data = data_flt[data_flt$individual.taxon.canonical.name == "Puffinus yelkouan",], col = NA, buffer = 5000, BirdID = 10) 
+      
 
 
 #summary stats for number of individuals and tracks
