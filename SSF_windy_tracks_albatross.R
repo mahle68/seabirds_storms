@@ -87,11 +87,11 @@ mv <- move(x = data$Longitude,y = data$Latitude,time = data$date_time, data = da
 
 start_time <- Sys.time()
     
-sp_obj_ls_2<-lapply(split(mv),function(trip){
+sp_obj_ls_4 <- lapply(split(mv),function(trip){
       
       #--STEP 1: thin the data to 1-hourly intervals
       trip_th<-trip%>%
-        thinTrackTime(interval = as.difftime(2, units='hours'),
+        thinTrackTime(interval = as.difftime(4, units='hours'),
                       tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
       #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
       trip_th$selected <- c(as.character(trip_th@burstId),NA) #assign selected as a variable
@@ -113,6 +113,8 @@ sp_obj_ls_2<-lapply(split(mv),function(trip){
       }
       #convert back to a move object (from move burst)
       trip_th <- as(trip_th,"Move")
+      
+      trip_th <- trip_th[trip_th$selected == "selected" | is.na(trip_th$selected),]
       
       #--STEP 3: calculate step lengths and turning angles 
       #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
@@ -147,7 +149,7 @@ sp_obj_ls_2<-lapply(split(mv),function(trip){
     
 #--STEP 4: estimate step length and turning angle distributions
     #put everything in one df
-bursted_df <- sp_obj_ls_2 %>%  
+bursted_df_4 <- sp_obj_ls_4 %>%  
       reduce(rbind) %>% 
       as.data.frame() %>% 
       dplyr::select(-c("coords.x1","coords.x2"))
@@ -162,7 +164,7 @@ bursted_df <- sp_obj_ls_2 %>%
     fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
     
     #plot
-    jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_2hr.jpeg")
+    jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_4hr.jpeg")
     #X11();
     par(mfrow=c(1,2))
     hist(sl,freq=F,main="",xlab = "Step length (km)")
@@ -171,11 +173,11 @@ bursted_df <- sp_obj_ls_2 %>%
     
     hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
     plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-    mtext("Step length and turning angle distributions (2-hr)", side = 3, outer =T,line = -4, font = 2) 
+    mtext("Step length and turning angle distributions (4-hr)", side = 3, outer =T,line = -4, font = 2) 
     dev.off()
     
     #--STEP 5: produce alternative steps
-    used_av_trip <- lapply(sp_obj_ls_2, function(trip){ #for each trip
+    used_av_trip_4 <- lapply(sp_obj_ls_2, function(trip){ #for each trip
       
       used_av_burst <- lapply(split(trip,trip$burst_id),function(burst){ #for each burst,
         
