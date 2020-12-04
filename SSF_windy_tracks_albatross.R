@@ -1,6 +1,7 @@
 #script for exploration of seabird data to find their response to strong wind conditions
 #Elham Nourani, PhD. Nov. 12. 2020. Radolfzell am Bodensee, Germany
 #update Nov 26: filter out sitting positions and redo the alternative steps generation
+# see previous versions for hourly data (annotated by Sophie)
 
 library(tidyverse)
 library(move)
@@ -85,13 +86,37 @@ data <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data
 
 mv <- move(x = data$Longitude,y = data$Latitude,time = data$date_time, data = data, animal = data$TripID,proj = wgs)
 
+hrs <- 6 #how long should the steps be? temporally
+n <- 20 #how many alternative steps?
+
+
+
+mycl <- makeCluster(detectCores() - 2)
+
+clusterExport(mycl, c("mv", "n", "hrs", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(tidyverse)
+  library(sf)
+  library(raster)
+  library(move)
+  library(sp)
+  library(circular)
+  library(CircStats)
+  library(fitdistrplus)
+  library(tidyr)
+})
+
+
+
 start_time <- Sys.time()
-    
-sp_obj_ls_4 <- lapply(split(mv),function(trip){
+
+sp_obj_ls <- parLapply(mycl, split(mv), function(trip){
+#sp_obj_ls <- lapply(split(mv),function(trip){
       
       #--STEP 1: thin the data to 1-hourly intervals
       trip_th<-trip%>%
-        thinTrackTime(interval = as.difftime(4, units='hours'),
+        thinTrackTime(interval = as.difftime(hrs, units='hours'),
                       tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
       #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
       trip_th$selected <- c(as.character(trip_th@burstId),NA) #assign selected as a variable
@@ -114,7 +139,7 @@ sp_obj_ls_4 <- lapply(split(mv),function(trip){
       #convert back to a move object (from move burst)
       trip_th <- as(trip_th,"Move")
       
-      trip_th <- trip_th[trip_th$selected == "selected" | is.na(trip_th$selected),]
+      #trip_th <- trip_th[trip_th$selected == "selected" | is.na(trip_th$selected),]
       
       #--STEP 3: calculate step lengths and turning angles 
       #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
@@ -144,12 +169,14 @@ sp_obj_ls_4 <- lapply(split(mv),function(trip){
       bursted_sp
     }) %>% 
       Filter(function(x) length(x) > 1, .) #remove segments with no observation (these have only one obs due to the assignment of segment id)
-    
-    
+  
+Sys.time() - start_time
+  
+stopCluster(mycl)
     
 #--STEP 4: estimate step length and turning angle distributions
     #put everything in one df
-bursted_df_4 <- sp_obj_ls_4 %>%  
+bursted_df <- sp_obj_ls %>%  
       reduce(rbind) %>% 
       as.data.frame() %>% 
       dplyr::select(-c("coords.x1","coords.x2"))
@@ -160,11 +187,12 @@ bursted_df_4 <- sp_obj_ls_4 %>%
     kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
     
     #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-    sl<-bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
+    sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
     fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
     
     #plot
-    jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_4hr.jpeg")
+    #jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_4hr.jpeg")
+    jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_WAAL_", hrs, "hr_", n, "n",".jpeg"))
     #X11();
     par(mfrow=c(1,2))
     hist(sl,freq=F,main="",xlab = "Step length (km)")
@@ -173,11 +201,30 @@ bursted_df_4 <- sp_obj_ls_4 %>%
     
     hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
     plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-    mtext("Step length and turning angle distributions (4-hr)", side = 3, outer =T,line = -4, font = 2) 
+    mtext(paste0("WAAL_Step length and turning angle distributions (", hrs, "-hr)"), side = 3, outer =T,line = -4, font = 2) 
     dev.off()
     
-    #--STEP 5: produce alternative steps
-    used_av_trip_4 <- lapply(sp_obj_ls_2, function(trip){ #for each trip
+    #--STEP 5: generate alternative steps
+    mycl <- makeCluster(detectCores() - 2)
+    
+    clusterExport(mycl, c("sp_obj_ls", "n", "hrs", "wgs", "mu", "kappa", "fit.gamma1", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
+    
+    clusterEvalQ(mycl, {
+      library(tidyverse)
+      library(sf)
+      library(raster)
+      library(move)
+      library(sp)
+      library(circular)
+      library(CircStats)
+      library(fitdistrplus)
+      library(tidyr)
+    })
+    
+    
+    
+    start_time <- Sys.time()
+    used_av_trip <- parLapply(mycl, sp_obj_ls, function(trip){ #for each trip
       
       used_av_burst <- lapply(split(trip,trip$burst_id),function(burst){ #for each burst,
         
@@ -190,9 +237,9 @@ bursted_df_4 <- sp_obj_ls_4 %>%
           previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
           used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
           
-          #randomly generate 20 step lengths and turning angles
-          rta <- as.vector(rvonmises(n = 20, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-          rsl<-rgamma(n= 20, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+          #randomly generate n step lengths and turning angles
+          rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+          rsl<-rgamma(n= n, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
           
           #calculate bearing of previous point
           #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
@@ -211,13 +258,17 @@ bursted_df_4 <- sp_obj_ls_4 %>%
           
           #put used and available points together
           df <- used_point@data %>%  
-            slice(rep(row_number(),21)) %>% #paste each row 20 times for the used and alternative steps
+            slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
             mutate(Longitude = c(head(Longitude,1),rnd_sp@coords[,1]),
                    Latitude = c(head(Latitude,1),rnd_sp@coords[,2]),
-                   used = c(1,rep(0,20)))  %>% #one hour after the start point of the step
+                   used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
             rowwise() %>% 
             mutate(heading = NCEP.loxodrome.na(lat1=current_point$Latitude,lat2=Latitude,lon1=current_point$Longitude,lon2= Longitude)) %>% 
+            dplyr::select(-c("accumulated_dist", "turningAngle_deg", "turningAngle_rad", "speed_kmh")) %>% 
             as.data.frame()
+          
+          df[df$used == 0, c("turning_angle", "step_length", "angleBirdWind", "windAzimuth", "windSpeed_kmh", "windDirection", "windSpeed_ms", "v_wind_interp", 
+                             "u_wind_interp", "v_wind", "t", "travelled_distance_km", "DistColo")] <- NA
           
           df
           
@@ -233,50 +284,42 @@ bursted_df_4 <- sp_obj_ls_4 %>%
     #})
     Sys.time() - start_time
     
-    
-#rename x and y columns and assign NA to repeated values that don't make sense
-used_alt_trip <- used_av_trip %>% 
-  dplyr::select(-c("accumulated_dist", "turningAngle_deg", "turningAngle_rad", "selected", "speed_kmh"))
 
-used_alt_trip[used_alt_trip$used == 0, c("turning_angle", "step_length", "angleBirdWind", "windAzimuth", "windSpeed_kmh", "windDirection", "windSpeed_ms", "v_wind_interp", 
-                    "u_wind_interp", "v_wind", "t", "travelled_distance_km", "DistColo")] <- NA
-  
-#write.csv(used_alt_trip,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/DATSETS/WAAL_allGPS_2010-2020_homo_R1h_TrackParam_Wind50kmh_alt_steps.csv")
-save(used_alt_trip, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_Wind50kmh_alt_steps_2hr.RData")
+save(used_av_trip, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_Wind50kmh_alt_steps_", hrs, "hr_", n, "n",".RData"))
 
-#plot
-jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_step_eg.jpeg")
-#X11()
-maps::map("world",xlim = c(49,57), ylim = c(-49,-44.9),fil = TRUE,col = "ivory") #flyway
-title("Example of used and available steps")
-legend("bottomleft", legend = c("track","previous point", "start point","alternative end points", "used end point"),
-      col = c("grey", "yellow4", "firebrick1","orange", "firebrick4"), pch = 16, bty = "n")
-points(burst,col = "grey", pch = 16, cex = 1)
-points(previous_point,col = "yellow4", pch = 16, cex = 2)
-points(current_point,col = "firebrick1", pch = 16, cex = 2)
-points(rnd_sp, col = "orange", pch = 16, cex = 1)
-points(used_point, col = "firebrick4", pch = 16, cex = 2)
-dev.off()
+# #plot
+# jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_step_eg.jpeg")
+# #X11()
+# maps::map("world",xlim = c(49,57), ylim = c(-49,-44.9),fil = TRUE,col = "ivory") #flyway
+# title("Example of used and available steps")
+# legend("bottomleft", legend = c("track","previous point", "start point","alternative end points", "used end point"),
+#       col = c("grey", "yellow4", "firebrick1","orange", "firebrick4"), pch = 16, bty = "n")
+# points(burst,col = "grey", pch = 16, cex = 1)
+# points(previous_point,col = "yellow4", pch = 16, cex = 2)
+# points(current_point,col = "firebrick1", pch = 16, cex = 2)
+# points(rnd_sp, col = "orange", pch = 16, cex = 1)
+# points(used_point, col = "firebrick4", pch = 16, cex = 2)
+# dev.off()
 
 #have a look
 X11();par(mfrow= c(1,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
 maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-points(used_alt_trip[used_alt_trip$used == 0,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "gray55")
-points(used_alt_trip[used_alt_trip$used == 1,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "orange")
+points(used_av_trip[used_av_trip$used == 0,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "gray55")
+points(used_av_trip[used_av_trip$used == 1,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "orange")
 
 #prep for movebank annotation
-used_alt_trip <- used_alt_trip %>% 
+used_av_trip <- used_av_trip %>% 
   mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
   as.data.frame()
 
-colnames(used_alt_trip)[c(1,2)] <- c("location-long","location-lat") #rename columns to match movebank format
-write.csv(used_alt_trip, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_Wind50kmh_alt_steps_2hr.csv")
+colnames(used_av_trip)[c(1,2)] <- c("location-long","location-lat") #rename columns to match movebank format
+write.csv(used_av_trip, paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_Wind50kmh_alt_steps_", hrs, "hr_", n, "n",".csv"))
 
 
 # STEP 2: data exploration!#####
 
 #open annotated data
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_2hr/WAAL_Wind50kmh_alt_steps_2hr.csv-1140471397987818705.csv", stringsAsFactors = F)
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_6hr/WAAL_Wind50kmh_alt_steps_6hr_20n.csv-3127490191197375873.csv", stringsAsFactors = F)
 
 ann_cmpl <-  ann %>% 
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
@@ -297,21 +340,21 @@ ann_cmpl <-  ann %>%
          wind_speed_kmh = wind_speed_ms * 3.6) %>% 
   as.data.frame()
 
-save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_data_ssf_ann_2hr.RData")
+save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_data_ssf_ann_6hr.RData")
 
 
 #plots
 
 #boxplots
-jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/Used_avail_WAAL_2hr.jpeg", width = 10, height = 4, units = "in", res = 300)
-X11(width = 13, height = 4)
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/Used_avail_WAAL_6hr.jpeg", width = 10, height = 4, units = "in", res = 300)
+#X11(width = 13, height = 4)
 par(mfrow= c(1,3), oma = c(0,0,3,0))
 for(i in c("wind_speed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
   boxplot(ann_cmpl[,i] ~ ann_cmpl[,"used"], 
           xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
   axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
 }
-mtext("Tracks containing 50 km/h winds- 2hrly steps", side = 3, outer = T, cex = 1)
+mtext("Tracks containing 50 km/h winds- 6hrly steps", side = 3, outer = T, cex = 1)
 
 dev.off()
 
@@ -333,6 +376,8 @@ hist(ann_cmpl[ann_cmpl$used == 1,"wind_support_kmh"], add= T, freq = F)
 
 # STEP 3: analysis#####
 
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_data_ssf_ann_6hr.RData")
+
 #correlation
 ann_cmpl %>% 
   dplyr::select(c("wind_speed_kmh","cross_wind_kmh","wind_support_kmh")) %>% 
@@ -342,44 +387,234 @@ ann_cmpl %>%
 
 #z-transform
 all_data <- ann_cmpl %>% 
+  mutate(abs_cw = abs(cross_wind_kmh)) %>% 
   #group_by(species) # z_transform for each species separately. or not? ... huh!
-  mutate_at(c("wind_speed_kmh","cross_wind_kmh","wind_support_kmh"),
+  mutate_at(c("wind_speed_kmh","cross_wind_kmh","abs_cw","wind_support_kmh"),
             list(z = ~scale(.))) %>%
   as.data.frame()
 
-#run a quick ssf and see what happens
-form1 <- formula(used ~ wind_speed_kmh_z + cross_wind_kmh_z + wind_support_kmh_z +  
+#repeat the individual ID column for INLA
+
+all_data <- all_data %>% 
+  mutate(BirdID1 = factor(BirdID),
+         BirdID2 = factor(BirdID),
+         BirdID3 = factor(BirdID),
+         BirdID4 = factor(BirdID))
+
+#work on a sample of individuals for now
+sample <- all_data[all_data$BirdID %in% c("BS8484", "BS27620"),]
+
+#---- clogit: run a quick ssf and see what happens ----
+form1 <- formula(used ~ wind_speed_kmh_z  + abs_cw_z + wind_support_kmh_z + I(wind_support_kmh_z ^ 2) +
                    strata(stratum))
 m1 <- clogit(form1, data = all_data)
 
+form2 <- formula(used ~ wind_speed_kmh_z  + cross_wind_kmh_z + wind_support_kmh_z + I(wind_support_kmh_z ^ 2) +
+                   strata(stratum))
+m2 <- clogit(form2, data = all_data)
 
+d <- fit_clogit(all_data, form2, model = TRUE)
+
+log_rss(x1 = all_data, object = d) #relative selection strength
+
+#---- INLA: also try adding step length and maybe cos(ta_) ----
+
+# Set mean and precision for the priors of slope coefficients (fixed effects)
+mean.beta <- 0
+prec.beta <- 1e-4 #precision of 1e-4 equals a variance of 1e4 ;)
+
+
+#visualize the priors (stats rethinking p. 349)
+# N <- 100
+# a <- rnorm(N, 0,1e6) #prior of the intercept
+# b <- rnorm(N, 3, 0.05)
+# plot(NULL, xlim = c(-2,2), ylim = c(0,100))
+# for(i in 1:N) curve(exp(a[i] + b[i]*x), add = T)
+
+
+# prec <- seq(0.01, 2, by = 0.01)
+# alpha <- c(0.95, 0.90, 0.80, 0.50, 0.25, 0.1)
+# pc.prec <- lapply(alpha, function(a) {
+#   inla.pc.dprec(prec, 1, a)
+# })
+# pc.prec <- do.call(c, pc.prec)
+# 
+# tab <- data.frame(prec = rep(prec, length(alpha)), pc.prec = pc.prec,
+#                   alpha = rep(as.character(alpha), each = length(prec)))
+# 
+
+library(ggplot2)
+ggplot(tab, aes(x = prec, y = pc.prec, linetype = alpha)) + geom_line() +
+  xlab(expression(paste("precision ", tau))) +
+  ylab("density") +
+  ggtitle(expression(paste("PC prior on the precision ", tau,
+                           " with P(", sigma, " > 1) = ", alpha))) +
+  scale_linetype_discrete(name = expression(alpha))
+
+#model 1: plain. just wspd, cw, and wspt
+formula1 <- used ~ -1 + wind_speed_kmh_z + cross_wind_kmh_z + wind_support_kmh_z + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) #+
+  #f(BirdID1, wind_speed_kmh_z, model = "iid", 
+  #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  #f(BirdID2, cross_wind_kmh_z,  model = "iid",
+  #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  #f(BirdID3, wind_support_kmh_z,  model = "iid",
+  #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+(b <- Sys.time())
+m1 <- inla(formula1, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.predictor = list(link = 1), #required to set the right link (i.e., the logit function) 
+            #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b
+
+summary(m1)
+
+save(m1, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m1_all_wind.RData")
+
+#---------------model 2: only wind support as a smooth term (not centered). sample of data
+#add missing predictor values to the dataset, for prediction and plotting
+#xx <- seq(-90, 90, by = 1)
+#new_data <- cbind(wind_support_kmh = xx, used = NA)
+#new_data <- rbind(all_data, new_data)
+
+#bin the data, otherwise I get an error that locations are too close.
+sample$wspt_group <- inla.group(sample$wind_support_kmh, n = 20, method = "quantile")
+
+formula2 <- used ~ -1 + f(wspt_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) #+ 
+  #f(BirdID1, wspt_group, model = "iid", 
+  #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+(b <- Sys.time())
+m2 <- inla(formula2, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
+           #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+           control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b
+
+summary(m2)
+
+
+#---------------model 2a: full model 1 showed that wind speed had the highest coefficient. So, look at wind speed as a smooth term (not centered). all data
+
+#bin the data, otherwise I get an error that locations are too close.
+all_data$wspd_group <- inla.group(all_data$wind_speed_kmh, n = 50, method = "quantile") 
+all_data$wspt_group <- inla.group(all_data$wind_support_kmh, n = 50, method = "quantile")
+all_data$cw_group <- inla.group(all_data$cross_wind_kmh, n = 50, method = "quantile")
+
+formula2a <- used ~ -1 + f(wspd_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+(b <- Sys.time())
+m2a <- inla(formula2a, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
+           #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+           control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b
+
+save(m2a, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m2a_full.RData")
+
+summary(m2a)
+
+#plot the smooth effect of wind support
+## ----label = "lidarsmooth", fig = TRUE, echo = FALSE, fig.cap = '(ref:lidarsmooth)'----
+
+tab.rw2 <- data.frame(x = m2a$summary.random$wspd_group[, "ID"],
+                      y = m2a$summary.random$wspd_group[, "mean"]
+)
+
+plot(tab.rw2$x,tab.rw2$y) #I don't understand what the units of the y axis are. if I exp() them, they will go from 0.02 to 0.035
+plot(tab.rw2$x,exp(tab.rw2$y)) 
+
+#ggplot(aes(x = wind_support_kmh, y = used), data = sample) + 
+  #geom_point(aes(x = wspt_group, y = used), colour = "grey") +
+  #geom_point() +
+  #ggtitle("wind support") +
+  #geom_line(aes(x = x, y = y, linetype = "solid"), data = tab.rw2) #+
+  #geom_line(aes(x = x, y = y, linetype = "dashed"), data = tab.rw2) +
+  #scale_linetype_manual(name = "Smoothing method (grouped range)",
+  #                      values = c("solid", "dashed"),
+  #                      labels = c("rw2", "rw1")) +
+  #theme(legend.position = "bottom")
+
+marginals_mean <- sapply(m2$marginals.hyperpar,
+                         function(x)
+                           inla.emarginal(function(x) x, inla.tmarginal(function(x) 1/x, x)))
+
+names(marginals_mean) <- sapply(as.vector(as.character(names(marginals_mean))),
+                                function(y) gsub("Precision", x=y, "Mean of variance"))
+marginals_mean
+
+
+m = m2a$marginals.random$wspd_group
+plot(inla.smarginal(m), type="l")
+
+
+#---------------model 3: full model with 3 smooth terms 
+formula3 <- used ~ -1 + f(wspd_group, model = "rw2", constr = F) + 
+  f(wspt_group, model = "rw2", constr = F) + 
+  f(cw_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+(b <- Sys.time())
+m3 <- inla(formula3, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
+            #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b #2.5253 hours
+
+save(m3, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m3_full.RData") #n of 50 for binned wind
+
+summary(m3)
+
+
+X11(); par(mfrow = c(1,3))
+wspd <- data.frame(x = m3$summary.random$wspd_group[, "ID"],
+                      y = m3$summary.random$wspd_group[, "mean"]
+)
+
+wspt <- data.frame(x = m3$summary.random$wspt_group[, "ID"],
+                   y = m3$summary.random$wspt_group[, "mean"]
+)
+
+cw <- data.frame(x = m3$summary.random$cw_group[, "ID"],
+                   y = m3$summary.random$cw_group[, "mean"]
+)
+
+plot(wspd$x,exp(wspd$y)) 
+plot(wspt$x,exp(wspt$y)) 
+plot(cw$x,exp(cw$y)) 
+
+
+#---------------model 4: full model with 3 smooth terms. absolute value of wind support 
 
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------
-############ one-hourly data
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_2hr/WAAL_Wind50kmh_alt_steps_2hr.csv-1140471397987818705.csv")
-
-#calculate wind support and crosswind
-Waal_R1_windParam <- Waal_R1_windParam %>% 
-  mutate(wind_support_ms = wind_support(u=u_wind_interp,v=v_wind_interp,heading=heading),
-         cross_wind_ms = cross_wind(u=u_wind_interp,v=v_wind_interp,heading=heading)) %>% 
-  mutate(wind_support_kmh = wind_support_ms * 3.6, #convert to kmh
-         cross_wind_kmh = cross_wind_ms * 3.6)
-
-
-#plot used vs available values
-
-jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/alt_vs_used_km.jpeg", width = 15, height = 5, units = "in", res = 300)
-X11(width = 13, height = 4)
-par(mfrow= c(1,4), oma = c(0,0,3,0))
-for(i in c("windDirection", "windSpeed_kmh", "cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
-  boxplot(Waal_R1_windParam[,i] ~ Waal_R1_windParam[,"used"], 
-          xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
-  axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
-}
-mtext("Tracks containing 50 km/h winds (n = 219)", side = 3, outer = T, cex = 1)
-dev.off()
-
 
 ##################### only look at tracks with over 60 km/hr winds... doesnt change much. also try 70
 #get a summary of number of tracks with over a certain wind speed
