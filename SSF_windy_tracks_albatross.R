@@ -474,9 +474,11 @@ m1 <- inla(formula1, family ="Poisson",
             control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
 Sys.time() - b
 
-summary(m1)
+summary(m1) #WAIC 90050.57; Mlik -96029.98
 
 save(m1, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m1_all_wind.RData")
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m1_all_wind.RData")
+
 
 #---------------model 2: only wind support as a smooth term (not centered). sample of data
 #add missing predictor values to the dataset, for prediction and plotting
@@ -509,11 +511,11 @@ summary(m2)
 
 
 #---------------model 2a: full model 1 showed that wind speed had the highest coefficient. So, look at wind speed as a smooth term (not centered). all data
-
 #bin the data, otherwise I get an error that locations are too close.
 all_data$wspd_group <- inla.group(all_data$wind_speed_kmh, n = 50, method = "quantile") 
 all_data$wspt_group <- inla.group(all_data$wind_support_kmh, n = 50, method = "quantile")
 all_data$cw_group <- inla.group(all_data$cross_wind_kmh, n = 50, method = "quantile")
+all_data$abs_cw_group <- inla.group(all_data$abs_cw, n = 50, method = "quantile")
 
 formula2a <- used ~ -1 + f(wspd_group, model = "rw2", constr = F) + 
   f(stratum, model = "iid", 
@@ -569,7 +571,7 @@ m = m2a$marginals.random$wspd_group
 plot(inla.smarginal(m), type="l")
 
 
-#---------------model 3: full model with 3 smooth terms 
+#---------------model 3: full model with 3 smooth terms (not centered; no random effect for individuals- n = 193)
 formula3 <- used ~ -1 + f(wspd_group, model = "rw2", constr = F) + 
   f(wspt_group, model = "rw2", constr = F) + 
   f(cw_group, model = "rw2", constr = F) + 
@@ -588,30 +590,131 @@ m3 <- inla(formula3, family ="Poisson",
             control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
 Sys.time() - b #2.5253 hours
 
+summary(m3) #WAIC 85746.35; MLik -113256.38
+
 save(m3, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m3_full.RData") #n of 50 for binned wind
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m3_full.RData")
 
-summary(m3)
 
-
-X11(); par(mfrow = c(1,3))
 wspd <- data.frame(x = m3$summary.random$wspd_group[, "ID"],
-                      y = m3$summary.random$wspd_group[, "mean"]
+                      y = m3$summary.random$wspd_group[, "mean"],
+                   ll95 = m3$summary.random$wspd_group[,"0.025quant"],
+                   ul95 = m3$summary.random$wspd_group[,"0.975quant"]
 )
 
 wspt <- data.frame(x = m3$summary.random$wspt_group[, "ID"],
-                   y = m3$summary.random$wspt_group[, "mean"]
+                   y = m3$summary.random$wspt_group[, "mean"],
+                   ll95 = m3$summary.random$wspt_group[,"0.025quant"],
+                   ul95 = m3$summary.random$wspt_group[,"0.975quant"]
 )
 
 cw <- data.frame(x = m3$summary.random$cw_group[, "ID"],
-                   y = m3$summary.random$cw_group[, "mean"]
+                   y = m3$summary.random$cw_group[, "mean"],
+                 ll95 = m3$summary.random$cw_group[,"0.025quant"],
+                 ul95 = m3$summary.random$cw_group[,"0.975quant"]
 )
 
-plot(wspd$x,exp(wspd$y)) 
-plot(wspt$x,exp(wspt$y)) 
-plot(cw$x,exp(cw$y)) 
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/INLA_results_figures/WAAL_6hr_all_smooth.jpeg", width = 11, height = 3.5, units = "in", res = 300)
+#X11(width = 11, height = 3.5)
+par(mfrow= c(1,3), oma = c(0,1,3,0), bty = "l")
+plot(wspd$x,exp(wspd$y), xlab = "wind speed (kmh)", ylab = "exp(y)", type = "l") 
+points(x = all_data$wspd_group, y = all_data$used)
+plot(wspt$x,exp(wspt$y), xlab = "wind support (kmh)", ylab = "", type = "l") 
+abline(v = 0, col = "gray", lty = 2)
+plot(cw$x,exp(cw$y), xlab = "cross wind (kmh)", ylab = "", type = "l") 
+abline(v = 0, col = "gray", lty = 2)
+mtext ("INLA SSF analysis. Wandering Albatross.", side = 3, outer = T, line = -0.2)
+mtext ("6-hrly steps. Smooth terms for wind speed, wind support, and cross wind (binned data; no z-transofmration). no random effects.", 
+       side = 3, outer = T, line = -2)
+dev.off()
+
+#plot with raw value and credible intervals
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/INLA_results_figures/WAAL_6hr_all_smooth_0_1.jpeg", width = 11, height = 3.5, units = "in", res = 300)
+#X11(width = 11, height = 3.5)
+par(mfrow= c(1,3), oma = c(0,1,3,0), bty = "l")
+
+plot(x = all_data$wspd_group, y = all_data$used, col = "grey90", xlab = "wind speed (kmh)", ylab = "exp(y)")
+lines(wspd$x,exp(wspd$y)) 
+polygon(x = c(wspd$x, rev(wspd$x)), y = c(exp(wspd$ll95),exp(wspd$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+plot(x = all_data$wspt_group, y = all_data$used, col = "grey90", xlab = "wind support (kmh)", ylab = "exp(y)")
+lines(wspt$x,exp(wspt$y)) 
+polygon(x = c(wspt$x, rev(wspt$x)), y = c(exp(wspt$ll95),exp(wspt$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+
+plot(x = all_data$cw_group, y = all_data$used, col = "grey90", xlab = "cross wind (kmh)", ylab = "exp(y)")
+lines(cw$x,exp(cw$y)) 
+polygon(x = c(cw$x, rev(cw$x)), y = c(exp(cw$ll95),exp(cw$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+mtext ("INLA SSF analysis. Wandering Albatross.", side = 3, outer = T, line = -0.2)
+mtext ("6-hrly steps. Smooth terms for wind speed, wind support, and cross wind (binned data; no z-transofmration). no random effects.", 
+       side = 3, outer = T, line = -2)
+dev.off()
 
 
 #---------------model 4: full model with 3 smooth terms. absolute value of wind support 
+formula4 <- used ~ -1 + f(wspd_group, model = "rw2", constr = F) + 
+  f(wspt_group, model = "rw2", constr = F) + 
+  f(abs_cw_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+(b <- Sys.time())
+m4 <- inla(formula4, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
+           #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+           control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b 
+
+summary(m4) #WAIC = 85827.00 ; MLik = -113325.29
+
+save(m4, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/m4_full.RData") #n of 50 for binned wind
+
+wspd <- data.frame(x = m4$summary.random$wspd_group[, "ID"],
+                   y = m4$summary.random$wspd_group[, "mean"],
+                   ll95 = m4$summary.random$wspd_group[,"0.025quant"],
+                   ul95 = m4$summary.random$wspd_group[,"0.975quant"]
+)
+
+wspt <- data.frame(x = m4$summary.random$wspt_group[, "ID"],
+                   y = m4$summary.random$wspt_group[, "mean"],
+                   ll95 = m4$summary.random$wspt_group[,"0.025quant"],
+                   ul95 = m4$summary.random$wspt_group[,"0.975quant"]
+)
+
+cw <- data.frame(x = m4$summary.random$abs_cw_group[, "ID"],
+                 y = m4$summary.random$abs_cw_group[, "mean"],
+                 ll95 = m4$summary.random$abs_cw_group[,"0.025quant"],
+                 ul95 = m4$summary.random$abs_cw_group[,"0.975quant"]
+)
+
+#plot with raw value and credible intervals
+jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/INLA_results_figures/WAAL_6hr_all_smooth_0_1_abs_cw.jpeg", width = 11, height = 3.5, units = "in", res = 300)
+#X11(width = 11, height = 3.5)
+par(mfrow= c(1,3), oma = c(0,1,3,0), bty = "l")
+
+plot(x = all_data$wspd_group, y = all_data$used, col = "grey90", xlab = "wind speed (kmh)", ylab = "exp(y)")
+lines(wspd$x,exp(wspd$y)) 
+polygon(x = c(wspd$x, rev(wspd$x)), y = c(exp(wspd$ll95),exp(wspd$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+plot(x = all_data$wspt_group, y = all_data$used, col = "grey90", xlab = "wind support (kmh)", ylab = "exp(y)")
+lines(wspt$x,exp(wspt$y)) 
+polygon(x = c(wspt$x, rev(wspt$x)), y = c(exp(wspt$ll95),exp(wspt$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+
+plot(x = all_data$abs_cw_group, y = all_data$used, col = "grey90", xlab = "abs(cross wind) (kmh)", ylab = "exp(y)")
+lines(cw$x,exp(cw$y)) 
+polygon(x = c(cw$x, rev(cw$x)), y = c(exp(cw$ll95),exp(cw$ul95)), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+mtext ("INLA SSF analysis. Wandering Albatross.", side = 3, outer = T, line = -0.2)
+mtext ("6-hrly steps. Smooth terms for wind speed, wind support, and ab(cross wind) (binned data; no z-transofmration). no random effects.", 
+       side = 3, outer = T, line = -2)
+dev.off()
 
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------
