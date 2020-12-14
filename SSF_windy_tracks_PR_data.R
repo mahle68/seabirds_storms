@@ -146,6 +146,14 @@ move_ls<-lapply(windy_tracks,function(x){
 str(lapply(move_ls, timeLag, units = "hours"))
 
 
+#plot
+X11()
+par(mfrow = c(2,4))
+lapply(move_ls, function(x){
+  maps::map("world")
+  points(x)
+  })
+
 
 mycl <- makeCluster(detectCores() - 5) #7 cores, one for each species
 
