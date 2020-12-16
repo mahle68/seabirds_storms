@@ -342,9 +342,16 @@ formula2 <- used ~ -1 + species +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T)))
 
+#only wind support. species as fixed effect
+formula3 <- used ~ -1 + species +
+  f(wind_support_kmh_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+
 # ---- model
   (b <- Sys.time())
-  m <- inla(formula2, family ="Poisson", 
+  m <- inla(formula3, family ="Poisson", 
             control.fixed = list(
               mean = mean.beta,
               prec = list(default = prec.beta)),
@@ -355,14 +362,13 @@ formula2 <- used ~ -1 + species +
             control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
   Sys.time() - b #9.824472 hours for fomula; 8.905299 for formula2
 
-save(m, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/3spp_m4b_full.RData") #n of 50 for binned wind
+save(m, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/3spp_wspt_full.RData") #n of 50 for binned wind
 
 
 ## ----label = "doseresp", fig = TRUE, echo = FALSE, fig.cap = '(ref:doseresp)'----
-tab.rw1 <- data.frame(x = vir.rw1$summary.random$dose[, "ID"],
-                      y = vir.rw1$summary.fitted.values[, "mean"], sex = H.virescens$sex)
-tab.rw2 <- data.frame(x = vir.rw2$summary.random$dose[, "ID"],
-                      y = vir.rw2$summary.fitted.values[, "mean"], sex = H.virescens$sex)
+tab.rw1 <- data.frame(x = m$summary.random$dose[, "ID"],
+                      y = m$summary.fitted.values[, "mean"], sex = H.virescens$sex)
+
 ggplot(aes(x = dose, y = numdead / total), data = H.virescens) + 
   geom_point() +
   xlab(expression(paste("Dose (", mu, "g)"))) +
@@ -377,38 +383,48 @@ ggplot(aes(x = dose, y = numdead / total), data = H.virescens) +
   theme(legend.position = "bottom")
 
 # ---- plot
-wspd <- data.frame(x = m$summary.random$species[, "ID"],
-                   y = m$summary.random$species[, "mean"],
-                   ll95 = m$summary.random$species[,"0.025quant"],
-                   ul95 = m$summary.random$species[,"0.975quant"]
-)
-
 wspt <- data.frame(x = m$summary.random$wind_support_kmh_group[, "ID"],
-                   y = m$summary.random$wind_support_kmh_group[, "mean"],
-                   ll95 = m$summary.random$wind_support_kmh_group[,"0.025quant"],
-                   ul95 = m$summary.random$wind_support_kmh_group[,"0.975quant"]
+                   y = m$summary.fitted.values[, "mean"],
+                   ll95 = m$summary.fitted.values[,"0.025quant"],
+                   ul95 = m$summary.fitted.values[,"0.975quant"],
+                   species = ann_cmpl$species
 )
-
-cw <- data.frame(x = m$summary.random$abs_cw_group[, "ID"],
-                 y = m$summary.random$abs_cw_group[, "mean"],
-                 ll95 = m$summary.random$abs_cw_group[,"0.025quant"],
-                 ul95 = m$summary.random$abs_cw_group[,"0.975quant"]
-)
+# 
+# wspd <- data.frame(x = m$summary.random$wind_speed_kmh_group[, "ID"],
+#                    y = m$summary.random$wind_speed_kmh_group[, "mean"],
+#                    ll95 = m$summary.random$wind_speed_kmh_group[,"0.025quant"],
+#                    ul95 = m$summary.random$wind_speed_kmh_group[,"0.975quant"],
+#                    species = ann_cmpl$species
+# )
+# 
+# wspt <- data.frame(x = m$summary.random$wind_support_kmh_group[, "ID"],
+#                    y = m$summary.random$wind_support_kmh_group[, "mean"],
+#                    ll95 = m$summary.random$wind_support_kmh_group[,"0.025quant"],
+#                    ul95 = m$summary.random$wind_support_kmh_group[,"0.975quant"]#,
+#                    #species = ann_cmpl$species
+# )
+# 
+# cw <- data.frame(x = m$summary.random$abs_cross_wind_kmh_group[, "ID"],
+#                  y = m$summary.random$abs_cross_wind_kmh_group[, "mean"],
+#                  ll95 = m$summary.random$abs_cross_wind_kmh_group[,"0.025quant"],
+#                  ul95 = m$summary.random$abs_cross_wind_kmh_group[,"0.975quant"]#,
+#                  #species = ann_cmpl$species
+# )
 
 #plot with raw value and credible intervals
 jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/INLA_results_figures/", x$species[1], "_",hrs ,"hrs_all_smooth_0_1_abs_cw.jpeg"), width = 11, height = 3.5, units = "in", res = 300)
 #X11(width = 11, height = 3.5)
 par(mfrow= c(1,3), oma = c(0,1,3,0), bty = "l")
 
-plot(x = all_data$wind_speed_kmh, y = all_data$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind speed (kmh)", ylab = "exp(y)")
+plot(x = ann_cmpl$wind_speed_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind speed (kmh)", ylab = "exp(y)")
 lines(wspd$x,exp(wspd$y)) 
 polygon(x = c(wspd$x, rev(wspd$x)), y = c(exp(wspd$ll95),rev(exp(wspd$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
 
-plot(x = all_data$wind_support_kmh, y = all_data$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind support (kmh)", ylab = "exp(y)")
+plot(x = ann_cmpl$wind_support_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind support (kmh)", ylab = "exp(y)")
 lines(wspt$x,exp(wspt$y)) 
 polygon(x = c(wspt$x, rev(wspt$x)), y = c(exp(wspt$ll95),rev(exp(wspt$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
 
-plot(x = all_data$abs_cw, y = all_data$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "abs(cross wind) (kmh)", ylab = "exp(y)")
+plot(x = ann_cmpl$abs_cross_wind_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "abs(cross wind) (kmh)", ylab = "exp(y)")
 lines(cw$x,exp(cw$y)) 
 polygon(x = c(cw$x, rev(cw$x)), y = c(exp(cw$ll95),rev(exp(cw$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
 
