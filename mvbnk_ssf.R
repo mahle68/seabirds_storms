@@ -86,7 +86,7 @@ arrange(TripID,date_time)
 cols <- intersect(names(alb), names(PR_tot))
 
 data <- PR_tot[,cols] %>%
-  filter(common_name %in% c("Atlantic Petrel","Soft-plumaged Petrel")) %>%  #keep the species of interest
+  filter(common_name %in% c("Atlantic Petrel", "Soft-plumaged Petrel")) %>%  #keep the species of interest
   full_join(alb[,c(cols, "BirdID")])
 
 
