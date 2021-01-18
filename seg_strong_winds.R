@@ -89,7 +89,6 @@ data <- PR_tot[,cols] %>%
   filter(common_name %in% c("Atlantic Petrel","Soft-plumaged Petrel")) %>%  #keep the species of interest
   full_join(alb[,c(cols, "BirdID")])
 
-
 #----------- STEP 2: subset points with strong wind ----
 
 windy <- data %>% 
