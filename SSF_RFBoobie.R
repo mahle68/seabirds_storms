@@ -1,5 +1,6 @@
 #script for exploration of Red footed boobie data to find their response to strong wind conditions
 #Elham Nourani, PhD. Jan. 12. 2021. Radolfzell am Bodensee, Germany
+#update: add 2015 data from SSF_RFBoobie.R
 
 library(tidyverse)
 library(move)
@@ -95,8 +96,8 @@ data %>%
   
 timeLag(mv, units = "secs")
 
-hrs <- 1 #how long should the steps be? temporally
-n <- 40 #how many alternative steps?
+hrs <- 2 #how long should the steps be? temporally
+n <- 20 #how many alternative steps?
 
 #because the trips are so short, consider each trip as a burst
 
@@ -118,7 +119,7 @@ clusterEvalQ(mycl, {
 
 
 
-start_time <- Sys.time()
+(start_time <- Sys.time())
 
 sp_obj_ls <- parLapply(mycl, split(mv), function(trip){
 #sp_obj_ls <- lapply(split(mv),function(trip){
@@ -200,7 +201,6 @@ bursted_df <- sp_obj_ls %>%
     fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
     
     #plot
-    #jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_4hr.jpeg")
     jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_RFB_", hrs, "hr_", n, "n",".jpeg"))
     #X11()
     par(mfrow=c(1,2))
@@ -232,7 +232,7 @@ bursted_df <- sp_obj_ls %>%
     
     
     
-    start_time <- Sys.time()
+    (start_time <- Sys.time())
     used_av_trip <- parLapply(mycl, sp_obj_ls, function(trip){ #for each trip
       
       used_av_burst <- lapply(split(trip,trip$burst_id),function(burst){ #for each burst,
@@ -328,7 +328,7 @@ write.csv(used_av_trip, paste0("/home/enourani/ownCloud/Work/Projects/seabirds_a
 # STEP 2: data exploration!#####
 
 #open annotated data
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/RFB/RFB_alt_steps_1hr_40n.csv-2967235872583441062.csv", stringsAsFactors = F)
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/RFB/RFB_alt_steps_2hr_20n.csv-3205681227214493741/RFB_alt_steps_2hr_20n.csv-3205681227214493741.csv", stringsAsFactors = F)
 
 ann_cmpl <-  ann %>% 
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
@@ -350,7 +350,7 @@ ann_cmpl <-  ann %>%
          abs_cross_wind_kmh = abs_cross_wind_ms * 3.6) %>% 
   as.data.frame()
 
-save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/RFB_data_ssf_ann_6hr.RData")
+save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/RFB_data_ssf_ann_2hr.RData")
 
 
 #plots

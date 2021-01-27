@@ -26,14 +26,32 @@ storms <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/we
     select(NAME) %>% 
     distinct()  
   
+  south_names <- storms %>% 
+    filter(LAT < -50) %>% 
+    select(NAME) %>% 
+    distinct()
+  
 #extract entire hurricane tracks
 cat5_2017_18 <- storms %>%
   filter(NAME %in% cat5_2017_18_names$NAME, SEASON %in% c(2017, 2018)) %>% 
   mutate_at(vars(9:10), as.numeric) %>% 
   st_as_sf(coords = c("LON", "LAT"),
            crs = wgs)
-
 mapview(cat5_2017_18, zcol = "NAME")
+
+south_2017_18 <- storms %>% 
+  filter(NAME %in% south_names$NAME, SEASON %in% c(2010:2018)) %>% 
+  st_as_sf(coords = c("LON", "LAT"),
+           crs = wgs)
+
+mapview(south_2017_18, zcol = "NAME")
+
+south_basin <- storms %>% 
+  filter(BASIN == "SI" & SUBBASIN == "MM") %>%  #WA is around australia; MM is indian ocean
+  st_as_sf(coords = c("LON", "LAT"),
+           crs = wgs)
+
+mapview(south_basin, zcol = "NAME")
 
 #extract only parts of the track with category 3-5
 cat5_2017_18 <- storms %>%

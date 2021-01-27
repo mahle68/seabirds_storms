@@ -98,6 +98,7 @@ data <- MB_ManxShearwater_split_wind %>%
   filter(windSpeed_kmh >= 20)# %>% #only keep points with winds higher than 20 kmh
   #mutate(row_id = row_number())
 
+save(data, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_spli_trip.RData")
 
 #one-hourly data annotated by Sophie
 
