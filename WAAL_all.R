@@ -63,8 +63,8 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 
 
 #open data
-teil1 <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/all_WAAL/WAAL_GPS_2010-17_ParamWind.csv")
-teil2 <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/all_WAAL/WAAL_XGPS_2016-19_ParamWind.csv")
+teil1 <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/all_WAAL/WAAL_GPS_2010-17_ParamWind.csv")
+teil2 <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/all_WAAL/WAAL_XGPS_2016-19_ParamWind.csv")
 
 columns_to_keep <- union(colnames(teil1), colnames(teil2))[-13] #remove julian date. format issues
 
@@ -75,7 +75,7 @@ waal <- teil1 %>%
   filter (FlyingSitting == "flying") %>% #filter out sitting positions
   arrange(TripID,date_time)
 
-
+save(waal, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData")
 
 # STEP 1: prepare alternative steps#####
 
