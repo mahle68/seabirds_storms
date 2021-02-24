@@ -56,7 +56,7 @@ server$retrieve("reanalysis-era5-single-levels",
 
 ##### STEP 3: open and process data #####
 
-setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
+setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms")
 species <- "RFB"
 
 file_list <- list.files(path = "data/ECMWF_daily/", pattern = species, full.names = T)
@@ -112,6 +112,8 @@ daily_summaries <- lapply(file_list,function(x) {
 save(daily_summaries, file = "R_files/RFB_daily_summaries.RData")
 
 ##### STEP 4: plot and summarise data #####
+
+load("R_files/RFB_daily_summaries.RData")
 #plot
 
 daily_summaries <- daily_summaries %>% 
@@ -121,8 +123,9 @@ daily_summaries <- daily_summaries %>%
 #first try max wspd
 
 X11()
+pdf("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/figures/daily_summaries_RFB", width = 8, height = 10)
 par(mfrow = c(3,1),
-    oma = c(3,0,0,0))
+    oma = c(3,0,2,0))
 
 #wind speed
 plot(NULL, xlim = c(0,63), ylim = c(0,80), labels = F, tck = 0, ann = F)
@@ -137,11 +140,11 @@ axis(side = 2, at = seq(10,80, by = 10), line = 0, labels = seq(10,80, by = 10),
      tick = T , col.ticks = 1, col = NA, lty = NULL, tck = -.015, 
      las = 2)
 
-mtext("Average wind speed (km/h)", 2, line = 2.5 ,las = 0, cex = 0.6, font = 3)
+mtext("Wind speed (km/h)", 2, line = 2.5 ,las = 0, cex = 0.6, font = 3)
 
 legend("topleft", legend = c("maximum", "average"), col = c("tomato1","goldenrod1"),
        pch = 20, cex = 0.8, pt.cex = 1.3, bg = "white", bty = "n") 
-mtext("Wind speed at sea surfacce (Red_footed Booby)", 3, line = 0.4, cex = 1.1, font = 2)
+#mtext("Wind speed at sea surfacce (Red_footed Booby)", 3, line = 0.4, cex = 1.1, font = 2)
 
 #wave height
 plot(NULL, xlim = c(0,63), ylim = c(0,6), labels = F, tck = 0, ann = F)
@@ -162,22 +165,24 @@ legend("topleft", legend = c("maximum", "average"), col = c("springgreen4","yell
        pch = 20, cex = 0.8, pt.cex = 1.3, bg = "white", bty = "n") 
 
 #pressure
-plot(NULL, xlim = c(0,63), ylim = c(89000,100800), labels = F, tck = 0, ann = F)
-points(as.factor(daily_summaries$timestamp), daily_summaries$sp_avg, pch = 20, col= "slateblue3", cex = 1.3)
-points(as.factor(daily_summaries$timestamp), daily_summaries$sp_min, pch = 20, col= "thistle1", cex = 1.3)
+plot(NULL, xlim = c(0,63), ylim = c(890,1008), labels = F, tck = 0, ann = F)
+points(as.factor(daily_summaries$timestamp), daily_summaries$sp_avg/100, pch = 20, col= "slateblue3", cex = 1.3)
+points(as.factor(daily_summaries$timestamp), daily_summaries$sp_min/100, pch = 20, col= "thistle1", cex = 1.3)
 
 axis(side = 1, at = unique(as.factor(daily_summaries$timestamp)), line = 0, labels = unique(as.factor(daily_summaries$timestamp)), 
      tick = T , col.ticks = 1, col = NA, lty = NULL, tck = -.015, las = 2)
 
-axis(side = 2, at = seq(1,5, by = 1), line = 0, labels = seq(1,5, by = 1),
+axis(side = 2, at = seq(900,1000, by = 50), line = 0, labels = seq(900,1000, by = 50),
      tick = T , col.ticks = 1, col = NA, lty = NULL, tck = -.015, 
      las = 2)
 
-mtext("Surfac pressure", 2, line = 2.5 ,las = 0, cex = 0.6, font = 3)
+mtext("Surfac pressure (hPa)", 2, line = 2.5 ,las = 0, cex = 0.6, font = 3)
 
-legend("topleft", legend = c("maximum", "min"), col = c("thistle1","slateblue3"),
+legend("bottomleft", legend = c("minimum", "average"), col = c("thistle1","slateblue3"),
        pch = 20, cex = 0.8, pt.cex = 1.3, bg = "white", bty = "n") 
 
+mtext("Daily conditions for RFB tracking period",side = 3, outer = T, cex = 1.5, line = -1)
+dev.off()
 #----------------------------------------------------
 #overall average over the years
 
@@ -202,8 +207,22 @@ windows();plot(avg_rstr) #the average u and v over 2011-2014
 writeRaster(avg_rstr, filename=c("avg_wind_u.tif","avg_wind_v.tif"),bylayer=TRUE, overwrite=FALSE)
 
 
+##### STEP 5: extract tracking data for windy days #####
 
+#extract from the daily summaries
+windy_days <- daily_summaries %>% 
+  filter(wspd_kmh_max >= 50)
 
+#for example, for 2015
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/RFB_2015.RData") #data_15
+
+windy_data <- data_15 %>% 
+  filter(as.Date(date_time) %in% as.Date(windy_days$timestamp))
+#mutate(date = as.Date(date_time))
+#filter(month(date_time) %in% windy_days$month & day(date_time) %in% windy_days$day)
+
+maps::map("world", xlim = c(35,41), ylim = c(-23,-20))
+points(windy_data$Longitude,windy_data$Latitude, col = factor(windy_data$ID))
 
 
 

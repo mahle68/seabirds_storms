@@ -1,5 +1,7 @@
 #script for investigating and running ssf on movebank data
 #Dec. 21, 2020. Elham Nourani. Radolfzell am Bodensee
+#Feb. 17 update: adding yelkouan and tropicbird. Omit Scopoli's (manipulated.)
+#no filter for wind conditions.
 
 library(tidyverse)
 library(lubridate)
@@ -63,25 +65,28 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 #----------- STEP 1: open data ----
 
 #trips identified by Sophie
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_ManxSkomer_split_wind.RData") #MB_ManxShearwater_split_wind
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_MaskedBoobies_split_wind.RData") #MB_MaskedBoobies_split_wind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_ManxSkomer_split_wind.RData") #MB_ManxShearwater_split_wind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_MaskedBoobies_split_wind.RData") #MB_MaskedBoobies_split_wind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_YelkouanSh_Malta_split_wind_split_wind.RData") #MB_YelkouanSh_Malta_split_wind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_TropicBirds_split_wind.RData") #MB_TropicBirds_split_wind
+MB_TropicBirds_split_wind$comments <- as.character(MB_TropicBirds_split_wind$comments)
 MB_MaskedBoobies_split_wind$individual.taxon.canonical.name <- "Sula dactylatra"
   
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_cyclone2012-16_splitTrip_TrackParam.Rdata") #ind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_cyclone2012-16_splitTrip_TrackParam.Rdata") #ind
 MB_FREG_c <- ind %>% 
   mutate(tag.local.identifier = as.character(tag.local.identifier)) %>% 
   dplyr::select(-height.raw)
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_2011_Wind_splitTrip_TrackParam.Rdata") #ind
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_2011_Wind_splitTrip_TrackParam.Rdata") #ind
 MB_FREG_2011 <- ind %>% 
   mutate(individual.taxon.canonical.name = "Fregata magnificens")
 rm(ind)
 
 #open csv files
-csvs <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/scop_balearic_Split_WindParam_TrackParam.csv", 
-                 stringsAsFactors = F,fileEncoding="latin1") %>% 
+#csvs <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/scop_balearic_Split_WindParam_TrackParam.csv", 
+#                 stringsAsFactors = F,fileEncoding="latin1") %>% 
   #full_join(read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/FUL_2018-19_ColonyLoc_ParamWind.csv",
   #                   stringsAsFactors = F,fileEncoding="latin1")) %>%  #this is not movebank data
-  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))#,
+#  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))#,
          #Year = as.character(Year)) #to match the RData file structures
 
 #merge everything together
@@ -90,27 +95,57 @@ data <- MB_ManxShearwater_split_wind %>%
   full_join(MB_MaskedBoobies_split_wind) %>% 
   full_join(MB_FREG_2011) %>% 
   full_join(MB_FREG_c) %>% 
-  full_join(csvs) %>% 
+  full_join(MB_TropicBirds_split_wind) %>% 
+  full_join(MB_YelkouanSh_Malta_split_wind) %>% 
+  #full_join(csvs) %>% 
   rename(species = individual.taxon.canonical.name) %>% 
   mutate(TripID = as.character(TripID)) %>% 
   #filter (FlyingSitting == "flying") %>% masked boobies and Puffinus puffinus dont have this.
-  arrange(species, TripID, date_time) %>% 
-  filter(windSpeed_kmh >= 20)# %>% #only keep points with winds higher than 20 kmh
+  arrange(species, TripID, date_time) #%>% 
+  #filter(windSpeed_kmh >= 20)# %>% #only keep points with winds higher than 20 kmh
   #mutate(row_id = row_number())
 
-save(data, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_spli_trip.RData")
+save(data, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
 
 #one-hourly data annotated by Sophie
 
-#----------- STEP 2: prepare alternative steps ----
 
-move_ls<-lapply(split(data, data$species),function(x){
+#what criteria did Sophie use for flying vs sitting
+data %>% 
+  filter(species == "Fregata magnificens") %>% 
+  dplyr::select(c("FlyingSitting", "speed_kmh")) %>% 
+  group_by(FlyingSitting) %>% 
+  summarize(min = min(speed_kmh,na.rm = T),
+            max = max(speed_kmh,na.rm = T)) #threshold for sitting is 2 km/h
+
+data[data$species == "Fregata magnificens",c("FlyingSitting", "speed_kmh")]
+
+#----------- STEP 2: assign flying/sitting  ----
+
+#what criteria did Sophie use for flying vs sitting
+data %>% 
+  filter(species == "Fregata magnificens") %>% 
+  dplyr::select(c("FlyingSitting", "speed_kmh")) %>% 
+  group_by(FlyingSitting) %>% 
+  summarize(min = min(speed_kmh,na.rm = T),
+            max = max(speed_kmh,na.rm = T)) #threshold for sitting is 2 km/h
+
+#create move objects and calculate speed
+move_ls <- lapply(split(data, data$species),function(x){
   x <- x %>%
     arrange(TripID, date_time) %>% 
     as.data.frame()
   mv <- move(x = x$Longitude,y = x$Latitude,time = x$date_time,data = x,animal = x$TripID,proj = wgs)
+  mv$speed_ms <- unlist(lapply(speed(mv),c))
   mv
+  
+  c(speed(mv),NA)
+  
+  unlist(lapply(speed(mv),append, values = NA, after = 0))
 })
+
+
+#----------- STEP 3: prepare alternative steps ----
 
 #investage recording regime for each specie
 str(lapply(move_ls, timeLag, units = "hours"))
