@@ -1,10 +1,7 @@
-#script for investigating and running ssf on movebank data
-#Dec. 21, 2020. Elham Nourani. Radolfzell am Bodensee
-#Feb. 17 update: adding yelkouan and tropicbird. Omit Scopoli's (manipulated.)
-#no filter for wind conditions.
+#script for investigating and running ssf on all seabird data
+#March 11, 2021. Elham Nourani. Radolfzell am Bodensee
 #flyigsitting: threshold is 3 km/h for one-hourly data (for wandering albatrosses).
 
-#
 #look at section 9.5 in Virgilio's book for drawing smooths for each level of a factor variable (doesnt work for binned data)
 
 library(tidyverse)
@@ -70,32 +67,17 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 
 #----------- STEP 1: open data ----
 
-#2021 files from Sophie, for the final list
+#files from Sophie, for the final list
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 lapply(files, load,.GlobalEnv)
 
-#trips identified by Sophie
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_MaskedBoobies_split_wind.RData") #MB_MaskedBoobies_split_wind
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_TropicBirds_split_wind.RData") #MB_TropicBirds_split_wind; white-tailed
-MB_TropicBirds_split_wind$comments <- as.character(MB_TropicBirds_split_wind$comments)
-MB_MaskedBoobies_split_wind$individual.taxon.canonical.name <- "Sula dactylatra"
-  
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_cyclone2012-16_splitTrip_TrackParam.Rdata") #ind
-MB_FREG_cyclone2012_16_splitTrip_TrackParam <- ind %>% 
-  mutate(tag.local.identifier = as.character(tag.local.identifier)) %>% 
-  dplyr::select(-height.raw)
+data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
-save(MB_FREG_cyclone2012_16_splitTrip_TrackParam, file = "data/From_Sophie/final_list_track_split/MB_FREG_cyclone2012-16_splitTrip_TrackParam.Rdata")
-
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_FREG_2011_Wind_splitTrip_TrackParam.Rdata") #ind
-MB_FREG_2011_Wind_splitTrip_TrackParam <- ind %>% 
-  mutate(individual.taxon.canonical.name = "Fregata magnificens")
-rm(ind)
-
-save(MB_FREG_2011_Wind_splitTrip_TrackParam, file = "data/From_Sophie/final_list_track_split/MB_FREG_2011_Wind_splitTrip_TrackParam.Rdata")
 #open csv files
-#csvs <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/scop_balearic_Split_WindParam_TrackParam.csv", 
-#                 stringsAsFactors = F,fileEncoding="latin1") %>% 
+
+ett <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
+                 stringsAsFactors = F,fileEncoding="latin1")
+#%>% 
   #full_join(read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/FUL_2018-19_ColonyLoc_ParamWind.csv",
   #                   stringsAsFactors = F,fileEncoding="latin1")) %>%  #this is not movebank data
 #  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))#,

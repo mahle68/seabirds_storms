@@ -55,7 +55,7 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
     head <-NA}
   return(head)
 }
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 # ---- STEP 1: open the data #####
 # all have been filtered by Sophie to include trips with wind over 50 kmh
