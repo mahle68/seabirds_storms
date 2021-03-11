@@ -2,6 +2,10 @@
 #Dec. 21, 2020. Elham Nourani. Radolfzell am Bodensee
 #Feb. 17 update: adding yelkouan and tropicbird. Omit Scopoli's (manipulated.)
 #no filter for wind conditions.
+#flyigsitting: threshold is 3 km/h for one-hourly data (for wandering albatrosses).
+
+#
+#look at section 9.5 in Virgilio's book for drawing smooths for each level of a factor variable (doesnt work for binned data)
 
 library(tidyverse)
 library(lubridate)
@@ -60,12 +64,12 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
     head <-NA}
   return(head)
 }
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 #----------- STEP 1: open data ----
 
 #trips identified by Sophie
-load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_ManxSkomer_split_wind.RData") #MB_ManxShearwater_split_wind
+#load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_ManxSkomer_split_wind.RData") #MB_ManxShearwater_split_wind. don't use. we don't have permission
 load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_MaskedBoobies_split_wind.RData") #MB_MaskedBoobies_split_wind
 load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_YelkouanSh_Malta_split_wind_split_wind.RData") #MB_YelkouanSh_Malta_split_wind
 load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/MB_TropicBirds_split_wind.RData") #MB_TropicBirds_split_wind
@@ -107,45 +111,73 @@ data <- MB_ManxShearwater_split_wind %>%
 
 save(data, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
 
-#one-hourly data annotated by Sophie
 
+# ---------- STEP 2: sub-sample to one hourly #####
 
-#what criteria did Sophie use for flying vs sitting
-data %>% 
-  filter(species == "Fregata magnificens") %>% 
-  dplyr::select(c("FlyingSitting", "speed_kmh")) %>% 
-  group_by(FlyingSitting) %>% 
-  summarize(min = min(speed_kmh,na.rm = T),
-            max = max(speed_kmh,na.rm = T)) #threshold for sitting is 2 km/h
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
 
-data[data$species == "Fregata magnificens",c("FlyingSitting", "speed_kmh")]
-
-#----------- STEP 2: assign flying/sitting  ----
-
-#what criteria did Sophie use for flying vs sitting
-data %>% 
-  filter(species == "Fregata magnificens") %>% 
-  dplyr::select(c("FlyingSitting", "speed_kmh")) %>% 
-  group_by(FlyingSitting) %>% 
-  summarize(min = min(speed_kmh,na.rm = T),
-            max = max(speed_kmh,na.rm = T)) #threshold for sitting is 2 km/h
-
-#create move objects and calculate speed
+#check current sampling rate
 move_ls <- lapply(split(data, data$species),function(x){
   x <- x %>%
     arrange(TripID, date_time) %>% 
     as.data.frame()
-  mv <- move(x = x$Longitude,y = x$Latitude,time = x$date_time,data = x,animal = x$TripID,proj = wgs)
-  mv$speed_ms <- unlist(lapply(speed(mv),c))
+  mv <- move(x = x$Longitude, y = x$Latitude, time = x$date_time, data = x, animal = x$TripID, proj = wgs)
   mv
   
-  c(speed(mv),NA)
-  
-  unlist(lapply(speed(mv),append, values = NA, after = 0))
 })
 
 
-#----------- STEP 3: prepare alternative steps ----
+str(lapply(move_ls, timeLag, units = "hours"))
+
+
+#thin the tracks. one hourly itnernavls
+move_ls_1hr <- lapply(move_ls, function(species){
+  lapply(split(species), function(track){
+    
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(1, units='hours'),
+                    tolerance = as.difftime(15, units='mins'))#the unselected bursts are the large gaps between the selected ones
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
+    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
+    track_th
+  })
+  
+})
+
+save(move_ls_1hr, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly.RData")
+
+
+#----------- STEP 3: assign flying/sitting  ----
+
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly.RData") #data
+
+flying_ls <- lapply(move_ls_1hr,function(x){ #for each species. x is a list of move objects
+  
+  x_2 <- lapply(x,function(y){
+    
+    y$speed_ms <- c(NA, speed(y))
+    y$speed_kmh_E <- y$speed_ms * 3.6
+    y$FlyingSitting_E <- ifelse(y$speed_kmh_E > 2, "flying", "sitting")
+    
+    #subset for flying.
+    #also add time lag. for bursting later
+    y$timelag <- c(NA, timeLag(y, units="hours"))
+    
+    y
+    
+  })
+  
+  do.call(rbind,x_2)
+  
+})
+
+save(flying_ls, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly_fl_si.RData")
+
+#----------- STEP 4: prepare alternative steps ----
+
+#assign bursts
+
 
 #investage recording regime for each specie
 str(lapply(move_ls, timeLag, units = "hours"))
