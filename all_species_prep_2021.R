@@ -65,18 +65,26 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
+
+#----------- Prep work ----
+
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+
 #----------- STEP 1: open data ----
 
-#files from Sophie, for the final list
+#movebank files from Sophie
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 lapply(files, load,.GlobalEnv)
 
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
-#open csv files
+#csv files
 
-ett <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
+rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
                  stringsAsFactors = F,fileEncoding="latin1")
+cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv")
+ng <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_NorthernGannet_IleRouzic/Gannet-GPS-Rouzic-DavidGremillet-AllYears.csv")
+
 #%>% 
   #full_join(read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/FUL_2018-19_ColonyLoc_ParamWind.csv",
   #                   stringsAsFactors = F,fileEncoding="latin1")) %>%  #this is not movebank data
