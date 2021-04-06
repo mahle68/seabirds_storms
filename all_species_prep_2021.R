@@ -76,7 +76,186 @@ species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/d
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 lapply(files, load,.GlobalEnv)
 
+#red-tailed tropicbird
+#rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
+#                stringsAsFactors = F, fileEncoding="latin1") %>% 
+#  mutate(FlyingSitting = "flying")
+
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+
+#make sure all have timestamp 
+data_ls <- lapply(data_ls,function(x){
+  
+  if("timestamp" %in% colnames(x)){
+    x$timestamp <- as.POSIXct(strptime(x$timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")
+  } else {
+    x$timestamp <- as.POSIXct(strptime(x$date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")
+  }
+  
+  if(!("FlyingSitting" %in% colnames(x))) {
+    x$FlyingSitting <- NA
+  }
+  
+  x
+  
+})
+
+#common column names:
+cols <- Reduce(intersect, lapply(data_ls, colnames))
+  
+
+data_df <- data_ls %>% 
+  map(dplyr::select, cols) %>% 
+  reduce(rbind) %>% 
+  rename(sci_name = individual.taxon.canonical.name,
+         indID = individual.local.identifier) %>% 
+  mutate(sci_name = fct_recode(sci_name, 'Fregata magnificens' = "Fregata"),
+         month = month(timestamp),
+         year = year(timestamp))
+
+
+save(data_df, file =  "R_files/move_data_df.RData")
+
+
+
+
+#----------- STEP 2: filter for breeding season? ----
+
+
+
+
+
+#----------- STEP 3: sub-sample ----
+
+load("R_files/move_data_df.RData")
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df$TripID),timestamps = data_df$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+data_df <- data_df[-rows_to_delete,] 
+
+#split to one-hourly trips
+#check current sampling rate
+move_ls <- lapply(split(data_df,data_df$study.name),function(x){
+  x <- x %>%
+    arrange(TripID, timestamp) %>% 
+    as.data.frame()
+  mv <- move(x = x$Longitude, y = x$Latitude, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
+  mv
+  
+})
+
+
+str(lapply(move_ls, timeLag, units = "hours"))
+
+save(move_ls, file =  "R_files/move_data_mv_ls.RData")
+
+
+
+#do nazca booby separately
+
+species <- move_ls[[7]]
+
+  mycl <- makeCluster(detectCores() - 4) 
+  
+  clusterExport(mycl, "species") #define the variable that will be used within the function
+  
+  clusterEvalQ(mycl, {
+    library(move)
+    library(sp)
+    library(tidyverse)
+    
+  })
+  
+  (start_time <- Sys.time())
+  nazca_sp_1hr <- parLapply(mycl, split(species), function(track){
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(1, units='hours'),
+                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
+    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
+    track_th
+  }) %>% 
+    reduce(rbind) #gets converted to a spatialpointsdf
+  
+  
+  Sys.time() - start_time
+  
+  stopCluster(mycl)
+
+
+
+# spp other than nazca
+load("R_files/move_data_mv_ls.RData")
+
+
+#thin the tracks. one hourly itnernavls
+mycl <- makeCluster(detectCores() - 4) 
+
+clusterExport(mycl, "move_ls") #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(move)
+  library(sp)
+  library(tidyverse)
+
+})
+
+(start_time <- Sys.time())
+sp_ls_1hr <- parLapply(mycl, move_ls[-7], function(species){
+#sp_ls_1hr <- lapply(move_ls, function(species){
+  lapply(split(species), function(track){
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(1, units='hours'),
+                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
+    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
+    track_th
+  }) %>% 
+    reduce(rbind) #gets converted to a spatialpointsdf
+  
+})
+
+Sys.time() - start_time
+
+stopCluster(mycl)
+
+save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_1hr_30_no_nb.RData")
+
+
+sp_ls_1hr <- parLapply(mycl, move_ls, function(study){
+  
+  study_th <- study %>%
+    thinTrackTime(interval = as.difftime(1, units='hours'),
+                  tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
+  track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+  track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
+  track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
+  track_th
+  
+  lapply(split(species), function(track){
+    
+    track_th <- track %>%
+      thinTrackTime(interval = as.difftime(1, units='hours'),
+                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
+    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
+    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
+    track_th
+  }) %>% 
+    reduce(rbind)
+})
+
+save(move_ls_2hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_2hr_30.RData")
+
+
+
+
+
+
+
 
 #csv files
 
