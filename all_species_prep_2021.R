@@ -98,7 +98,7 @@ data <- MB_ManxShearwater_split_wind %>%
   full_join(MB_FREG_2011) %>% 
   full_join(MB_FREG_c) %>% 
   full_join(MB_TropicBirds_split_wind) %>% 
-  full_join(MB_YelkouanSh_Malta_split_wind) %>% 
+  #full_join(MB_YelkouanSh_Malta_split_wind) %>% 
   #full_join(csvs) %>% 
   rename(species = individual.taxon.canonical.name) %>% 
   mutate(TripID = as.character(TripID)) %>% 
@@ -107,12 +107,12 @@ data <- MB_ManxShearwater_split_wind %>%
   #filter(windSpeed_kmh >= 20)# %>% #only keep points with winds higher than 20 kmh
   #mutate(row_id = row_number())
 
-save(data, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
+save(data, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
 
 
 # ---------- STEP 2: sub-sample to one hourly #####
 
-load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
 
 #check current sampling rate
 move_ls <- lapply(split(data, data$species),function(x){
