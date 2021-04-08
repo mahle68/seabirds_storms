@@ -1,6 +1,7 @@
 #script for investigating and running ssf on all seabird data. Opening them, (old version: sub-sampling to one hourly). putting everything together
 #March 11, 2021. Elham Nourani. Radolfzell am Bodensee
 #update: don't subsample hourly. just subset to closest minute for gannets and nazca boobies (the sub-min resolutions that cause the C stack error.)
+#update: one minute is still causing errors. try rounding up to 15 min and then removing duplicated points
 
 library(tidyverse)
 library(lubridate)
@@ -133,19 +134,31 @@ data_df <- data_ls %>%
 
 
 #minute subsampling for nazca
-nb_1min <- data_df %>% 
+nb_prop <- data_df %>% 
   filter(sci_name == "Sula granti") %>% 
   arrange(timestamp) %>% 
-  mutate(minute = minute(timestamp),
-         hour = hour(timestamp),
+  mutate(hour = hour(timestamp),
          date = as.Date(timestamp)) %>% 
-  group_by(TripID, date, hour, minute) %>% #year is already taken care of in the track ID
-  slice(1) %>% 
+  group_by(TripID, date, hour) %>% #year is already taken care of in the track ID
+  slice_sample(prop = 0.05) %>% 
   ungroup()
+
+
+nb_15min <- data_df %>% 
+  filter(sci_name == "Sula granti") %>% 
+  mutate(dt_15min = round_date(timestamp, "15 minutes")) 
+
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_15min$TripID),timestamps = nb_15min$dt_15min,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+nb_15min <- nb_15min[-rows_to_delete,] 
+
+
   
 data_df <- data_df %>% 
   filter(sci_name != "Sula granti") %>% 
-  full_join(nb_1min)
+  full_join(nb_15min)
 
 
 #make sure all track IDs are unique
@@ -200,18 +213,17 @@ gannets %>%
 
 load("R_files/gannets_ls.RData")
 
-gannets_1min <- gannets %>%
+gannets_4per1hr <- gannets %>%
   rename(TripID = TrackId,
          indID = BirdId) %>% 
   arrange(timestamp) %>% 
-  mutate(hour = hour(timestamp),
-         min = minute(timestamp)) %>% 
-  group_by(TripID, DateGMT, hour, min) %>%
-  slice(1) %>% 
+  mutate(hour = hour(timestamp)) %>% 
+  group_by(TripID, DateGMT, hour) %>%
+  slice_sample(prop = 0.005) %>% 
   ungroup()
 
 
-save(gannets_1min, file = "R_files/gannets_1min.RData")
+save(gannets_4per1hr, file = "R_files/gannets_4ptsperhour.RData")
 
 
 # step 2: put everything together # ------------------------------------------

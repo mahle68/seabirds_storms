@@ -61,8 +61,13 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 # ------------ step 1 : generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df_apr8.RData") #data_df
+load("R_files/all_spp_df_apr9.RData") #data_df
 
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df$TripID),timestamps = data_df$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+data_df <- data_df[-rows_to_delete,] 
 
 #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
 
@@ -75,9 +80,12 @@ move_ls <- lapply(split(data_df,data_df$sci_name),function(x){
   
 })
 
+save(move_ls, file = "17_spp_move_ls.RData")
 
+####
+load("17_spp_move_ls.RData")
 
-mycl <- makeCluster(7) 
+mycl <- makeCluster(10) 
 clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
@@ -103,16 +111,16 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
       track$FlyingSitting <- ifelse(track$speed_kmh > 2, "flying", "sitting")
       
       #take flyingsitting out of the iData
-      track@idData[colnames(track@idData) != "FlyingSitting"]
+      track@idData <- track@idData[colnames(track@idData) != "FlyingSitting"]
      # track
     } else {
       track$speed_kmh <- c(NA, speed(track) * 3.6)
     }
     
-    track_th <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
+    track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
     
     
-    track_th <- track %>%
+    track_th <- track_flying %>%
       thinTrackTime(interval = as.difftime(60, units='mins'),
                     tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
@@ -153,8 +161,9 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
     #reassign values
     
     if(length(bursted_sp) >= 1){
-      bursted_sp$track<-track@idData$track
-      bursted_sp$species<-track@idData$species
+      bursted_sp$sci_name<-track@idData$sci_name
+      bursted_sp$indID<-track@idData$indID
+      bursted_sp$TripID<-track@idData$TripID
     }
     
     #bursted_sp$track<-track@idData$seg_id 
@@ -181,7 +190,7 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/60_30_new/",group@idData$group[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_all_spp/",species@idData$sci_name[1], ".pdf"))
   par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -206,8 +215,8 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
         #randomly generate 50 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 150, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl <- rgamma(n = 150, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+        rta <- as.vector(rvonmises(n = 50, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+        rsl <- rgamma(n = 50, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
         #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
@@ -226,12 +235,12 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
         
         #put used and available points together
         df <- used_point@data %>%  
-          slice(rep(row_number(),151)) %>% #paste each row 150 times for the used and alternative steps
-          mutate(x = c(head(x,1),rnd_sp@coords[,1]),
-                 y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,150)))  %>%
+          slice(rep(row_number(),51)) %>% #paste each row 50 times for the used and alternative steps
+          mutate(x = c(head(location.long,1),rnd_sp@coords[,1]),
+                 y = c(head(location.lat,1),rnd_sp@coords[,2]),
+                 used = c(1,rep(0,50)))  %>%
           rowwise() %>% 
-          mutate(heading = NCEP.loxodrome.na(lat1 = current_point$y, lat2 = y, lon1 = current_point$x, lon2 = x)) %>% 
+          mutate(heading = NCEP.loxodrome.na(lat1 = current_point$location.lat, lat2 = y, lon1 = current_point$location.long, lon2 = x)) %>% 
           as.data.frame()
         
         df
@@ -247,7 +256,7 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
   used_av_track
 })
 
-Sys.time() - b #5.22 mins
+Sys.time() - b 
 
 stopCluster(mycl) 
 
