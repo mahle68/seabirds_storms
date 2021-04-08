@@ -76,6 +76,7 @@ species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/d
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 lapply(files, load,.GlobalEnv)
 
+
 #red-tailed tropicbird
 #rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
 #                stringsAsFactors = F, fileEncoding="latin1") %>% 
@@ -121,11 +122,7 @@ save(data_df, file =  "R_files/move_data_df.RData")
 
 #----------- STEP 2: filter for breeding season? ----
 
-
-
-
-
-#----------- STEP 3: sub-sample ----
+#----------- STEP 3: sub-sample: hourly ----
 
 load("R_files/move_data_df.RData")
 #remove duplicated timestamps
@@ -154,11 +151,12 @@ save(move_ls, file =  "R_files/move_data_mv_ls.RData")
 
 #do nazca booby separately
 
-species <- move_ls[[7]]
+species <- move_ls[[7]]  #i get an error trying to run this. so, filter out na values and sitting points
+nb_flying <- species[!(is.na(species$FlyingSitting)) & species$FlyingSitting == "flying",]
 
   mycl <- makeCluster(detectCores() - 4) 
   
-  clusterExport(mycl, "species") #define the variable that will be used within the function
+  clusterExport(mycl, "nb_flying") #define the variable that will be used within the function
   
   clusterEvalQ(mycl, {
     library(move)
@@ -168,7 +166,7 @@ species <- move_ls[[7]]
   })
   
   (start_time <- Sys.time())
-  nazca_sp_1hr <- parLapply(mycl, split(species), function(track){
+  nazca_sp_1hr <- parLapply(mycl, split(nb_flying), function(track){
     track_th <- track %>%
       thinTrackTime(interval = as.difftime(1, units='hours'),
                     tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
@@ -218,45 +216,20 @@ sp_ls_1hr <- parLapply(mycl, move_ls[-7], function(species){
   
 })
 
-Sys.time() - start_time
+Sys.time() - start_time #10 min
 
 stopCluster(mycl)
 
 save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_1hr_30_no_nb.RData")
 
 
-sp_ls_1hr <- parLapply(mycl, move_ls, function(study){
-  
-  study_th <- study %>%
-    thinTrackTime(interval = as.difftime(1, units='hours'),
-                  tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
-  track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-  track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
-  track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-  track_th
-  
-  lapply(split(species), function(track){
-    
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
-    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    track_th
-  }) %>% 
-    reduce(rbind)
-})
-
-save(move_ls_2hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_2hr_30.RData")
 
 
 
 
 
 
-
-
+#---------------------------------------------------------
 #csv files
 
 rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
