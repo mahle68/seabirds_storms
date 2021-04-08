@@ -1,6 +1,6 @@
-#script for investigating and running ssf on all seabird data. Opening them, sub-sampling to one hourly. putting everything together?
+#script for investigating and running ssf on all seabird data. Opening them, (old version: sub-sampling to one hourly). putting everything together
 #March 11, 2021. Elham Nourani. Radolfzell am Bodensee
-
+#update: don't subsample hourly. just subset to closest minute for gannets and nazca boobies (the sub-min resolutions that cause the C stack error.)
 
 library(tidyverse)
 library(lubridate)
@@ -66,15 +66,26 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
-# step 1: one-hourly subsampling # ------------------------------------------
 
 # Movebank data prep ######
 
+#red-tailed tropicbird
+rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
+                stringsAsFactors = F,fileEncoding="latin1") %>% 
+  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  rename(TripID = comments) %>% 
+  mutate(month = month(timestamp),
+         year = year(timestamp))
+
 #movebank files from Sophie
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
-lapply(files, load,.GlobalEnv)
 
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+
+#append rtt
+data_ls$red_tailed_tropicbird <- rtt
+
+
 
 #make sure all have timestamp 
 data_ls <- lapply(data_ls,function(x){
@@ -89,6 +100,16 @@ data_ls <- lapply(data_ls,function(x){
     x$FlyingSitting <- NA
   }
   
+  if(!("location.lat" %in% colnames(x))){
+    x <- x %>% 
+      rename(location.lat = Latitude,
+             location.long = Longitude)
+  }
+  
+  
+  x[x$study.name == "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”", 
+    "individual.taxon.canonical.name"] <- "Sula dactylatra"
+  
   x
   
 })
@@ -102,162 +123,45 @@ data_df <- data_ls %>%
   reduce(rbind) %>% 
   rename(sci_name = individual.taxon.canonical.name,
          indID = individual.local.identifier) %>% 
-  mutate(sci_name = fct_recode(sci_name, 'Fregata magnificens' = "Fregata"),
+  mutate(sci_name = as.character(fct_recode(sci_name, 'Fregata magnificens' = "Fregata")),
          month = month(timestamp),
-         year = year(timestamp))
+         year = year(timestamp),
+         indID = as.character(indID)) %>% 
+  rowwise() %>% 
+  mutate(TripID = paste(year, indID, as.character(TripID))) %>% 
+  ungroup()
 
 
-save(data_df, file =  "R_files/move_data_df.RData")
-
-
-# one-hourly subsample
-
-load("R_files/move_data_df.RData")
-#remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df$TripID),timestamps = data_df$timestamp,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-
-data_df <- data_df[-rows_to_delete,] 
-
-#split to one-hourly trips
-#check current sampling rate
-move_ls <- lapply(split(data_df,data_df$study.name),function(x){
-  x <- x %>%
-    arrange(TripID, timestamp) %>% 
-    as.data.frame()
-  mv <- move(x = x$Longitude, y = x$Latitude, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
-  mv
-  
-})
-
-
-str(lapply(move_ls, timeLag, units = "hours"))
-
-save(move_ls, file =  "R_files/move_data_mv_ls.RData")
-
-
-# spp other than nazca
-load("R_files/move_data_mv_ls.RData")
-
-
-#thin the tracks. one hourly itnernavls
-mycl <- makeCluster(detectCores() - 2) 
-
-clusterExport(mycl, "move_ls") #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(move)
-  library(sp)
-  library(tidyverse)
-
-})
-
-(start_time <- Sys.time())
-mv_df_1hr <- parLapply(mycl, move_ls[-7], function(species){
-#sp_ls_1hr <- lapply(move_ls, function(species){
-  lapply(split(species), function(track){
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
-    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    as.data.frame(track_th)
-  }) %>% 
-    reduce(rbind) #gets converted to a spatialpointsdf
-  
-}) %>% 
-  reduce(rbind)
-
-Sys.time() - start_time #10 min
-
-stopCluster(mycl)
-
-save(mv_df_1hr , file = "R_files/move_1hr_30_no_nb.RData")
-
-
-
-#nazca booby separately. thinTrackTime produces C stack errors. so try the quick and easy way
-load("R_files/move_data_mv_ls.RData")
-
-nb <- move_ls[[7]]  #i get an error trying to run this. so, filter out na values and sitting points
-nb <- as.data.frame(move_ls[[7]])
-
-
-nb_1hr <- nb %>% 
+#minute subsampling for nazca
+nb_1min <- data_df %>% 
+  filter(sci_name == "Sula granti") %>% 
   arrange(timestamp) %>% 
-  mutate(hour = hour(timestamp),
+  mutate(minute = minute(timestamp),
+         hour = hour(timestamp),
          date = as.Date(timestamp)) %>% 
-  group_by(TripID, date, hour) %>% #year is already taken care of in the track ID
+  group_by(TripID, date, hour, minute) %>% #year is already taken care of in the track ID
   slice(1) %>% 
   ungroup()
   
-
-#remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_1hr$TripID),timestamps = nb_1hr$timestamp,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows.
-
-#convert to move
-nb_1hr_mv <- move(x = nb_1hr$coords.x1,y = nb_1hr$coords.x2,time = nb_1hr$timestamp,data =nb_1hr,animal = nb_1hr$TripID, proj = wgs)
+data_df <- data_df %>% 
+  filter(sci_name != "Sula granti") %>% 
+  full_join(nb_1min)
 
 
-timeLag(nb_1hr_mv, units = "mins")
+#make sure all track IDs are unique
+data_df %>% 
+  group_by(TripID) %>% 
+  summarise(n = n_distinct(indID)) %>%
+  filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
+  
 
-save(nb_1hr_mv, file = "R_files/nazcabooby_1hr.RData")
-save(nb_1hr, file = "R_files/nazcabooby_1hr_df.RData")
-
+save(data_df, file = "R_files/mv_incl_nb_rtt_df.RData")
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
+
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
-
-
-
-#remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(PR_data_split$TripID),timestamps = PR_data_split$date_time,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-
-PR_data_split <- PR_data_split[-rows_to_delete,] 
-
-#create move object
-move_ls <- lapply(split(PR_data_split,PR_data_split$common_name),function(x){
-  
-  x <- x %>%
-    arrange(TripID, date_time) %>% 
-    as.data.frame()
-  
-  mv <- move(x = x$location.long,y = x$location.lat,time = x$date_time,data = x,animal = x$TripID,proj = wgs)
-  mv
-})
-
-#original sampling frequency
-str(lapply(move_ls, timeLag, units = "mins")) 
-
-#sub-sample to hourly 
-(start_time <- Sys.time())
-df_pr_1hr <- lapply(move_ls, function(species){
-  
-  lapply(split(species), function(track){
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
-    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    as.data.frame(track_th)
-  }) %>% 
-    reduce(rbind) 
-  
-}) %>% 
-  reduce(rbind)
-
-Sys.time() - start_time # < 1 min
-
-df_pr_1hr <- df_pr_1hr %>% 
-  dplyr::select(-c(8:12))
-
-save(df_pr_1hr, file = "R_files/PR_1hr_30.RData")
-
+#no prep needed
 
 # Gremillet data prep ######
 cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv") %>% 
@@ -266,10 +170,7 @@ cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/D
 ng <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_NorthernGannet_IleRouzic/Gannet-GPS-Rouzic-DavidGremillet-AllYears.csv") %>% 
   mutate(common_name = "Northern gannet",
          scientific_name = "Morus bassanus",
-         DateGMT = as.character(as.Date(DateGMT, format = "%d/%m/%Y")))# %>% 
-#rowwise() %>% 
-#mutate(DateGMT = str_replace_all(DateGMT, "/", "-")) %>% 
-#ungroup()
+         DateGMT = as.character(as.Date(DateGMT, format = "%d/%m/%Y")))
 
 
 gannets <- cg %>% 
@@ -289,72 +190,36 @@ gannets <- gannets[-rows_to_delete,]
 
 save(gannets, file = "R_files/gannets_ls.RData")
 
-#create one move stack
+#make sure tripIDs are unique
+gannets %>% 
+  group_by(TrackId) %>% 
+  summarise(n = n_distinct(BirdId)) %>% 
+  filter(n > 1)
+
+#subset to minutely :p
 
 load("R_files/gannets_ls.RData")
 
-
-gannets_1hr <- gannets %>% 
+gannets_1min <- gannets %>%
+  rename(TripID = TrackId,
+         indID = BirdId) %>% 
   arrange(timestamp) %>% 
-  mutate(hour = hour(timestamp)) %>% 
-  group_by(TrackId, DateGMT, hour) %>%
+  mutate(hour = hour(timestamp),
+         min = minute(timestamp)) %>% 
+  group_by(TripID, DateGMT, hour, min) %>%
   slice(1) %>% 
   ungroup()
 
-move_ls_gannets <- lapply(split(gannets_1hr,gannets_1hr$common_name),function(x){
-  
-  x <- x %>%
-    arrange(TrackId, timestamp) %>% 
-    as.data.frame()
-  
-  mv <- move(x = x$Longitude,y = x$Latitude,time = x$timestamp,data = x,animal = x$TrackId,proj = wgs)
-  mv
-})
 
-
-str(lapply(move_ls_gannets, timeLag, units = "mins")) #almost hourly
-
-save(gannets_1hr, file = "R_files/gannets_1hr.RData")
-save(move_ls_gannets, file = "R_files/gannets_1hr_mv.RData")
-
-# Red-tailed tropicbird ######
-rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
-                stringsAsFactors = F,fileEncoding="latin1") %>% 
-  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
-  rename(sci_name = individual.taxon.canonical.name,
-         indID = individual.local.identifier,
-         TripID = comments) %>% 
-  mutate(month = month(timestamp),
-         year = year(timestamp))
-
-#remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(rtt$TripID),timestamps = rtt$timestamp,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows.
-
-#convert to move
-rtt_mv <- move(x = rtt$location.long,y = rtt$location.lat,time = rtt$timestamp,data =rtt,animal = rtt$TripID, proj = wgs)
-
-
-timeLag(rtt_mv) #this is already one-hourly :D
-
-save(rtt_mv, file = "R_files/redtailedtropicbird_1hr.RData")
-save(rtt, file = "R_files/redtailedtropicbird_1hr_df.RData")
+save(gannets_1min, file = "R_files/gannets_1min.RData")
 
 
 # step 2: put everything together # ------------------------------------------
 
 #open data ####
-# load("R_files/move_1hr_30_no_nb.RData") #mv_df_1hr
-# load("R_files/nazcabooby_1hr_df.RData") #nb_1hr
-# load("R_files/PR_1hr_30.RData") #df_pr_1hr
-# load("R_files/gannets_1hr.RData") #gannets_1hr
-# load("R_files/redtailedtropicbird_1hr_df.RData") #rtt
-
-files <- list("R_files/move_1hr_30_no_nb.RData",
-              "R_files/nazcabooby_1hr_df.RData",
-              "R_files/PR_1hr_30.RData",
-              "R_files/gannets_1hr.RData",
-              "R_files/redtailedtropicbird_1hr_df.RData")
+files <- list("R_files/mv_incl_nb_rtt_df.RData",
+              "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata", #PR_data_split
+              "R_files/gannets_1min.RData")
 
 
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
@@ -369,18 +234,9 @@ data_ls <- lapply(data_ls,function(x){
              location.long = Longitude)
   }
   
-  if(!("TripID" %in% colnames(x))){
+  if(!("indID" %in% colnames(x))) {
     x <- x %>% 
-      rename(TripID = TrackId)
-  }
-  
-  if(!("indID" %in% colnames(x)) & "device" %in% colnames(x)){
-    x <- x %>% 
-      rename(indID = device)
-  }
-  if(!("indID" %in% colnames(x)) & "BirdId" %in% colnames(x)){
-    x <- x %>% 
-      rename(indID = BirdId)
+      mutate(indID = NA)
   }
   
   if(!("FlyingSitting" %in% colnames(x))) {
@@ -396,11 +252,6 @@ data_ls <- lapply(data_ls,function(x){
   x <- x %>% 
     mutate_at(c("TripID", "indID", "sci_name", "FlyingSitting"), as.character)
   
-  if("study.name" %in% colnames(x) & "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”" %in% unique(x$study.name)) {
-    
-    x[x$study.name == "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”", "sci_name"] <- "Sula dactylatra"
-    
-  }
   
   x
   
@@ -417,4 +268,4 @@ data_df <- data_ls %>%
   map(dplyr::select, cols) %>% 
   reduce(rbind)
 
-save(data_df, file = "R_files/all_spp_df_apr8.RData")
+save(data_df, file = "R_files/all_spp_df_apr9.RData")
