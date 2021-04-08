@@ -1,6 +1,5 @@
-#script for investigating and running ssf on all seabird data. second batch of species
+#script for investigating and running ssf on all seabird data. Opening them, sub-sampling to one hourly. putting everything together?
 #March 11, 2021. Elham Nourani. Radolfzell am Bodensee
-
 
 
 library(tidyverse)
@@ -67,6 +66,7 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
+# step 1: one-hourly subsampling # ------------------------------------------
 
 # Movebank data prep ######
 
@@ -141,7 +141,7 @@ load("R_files/move_data_mv_ls.RData")
 
 
 #thin the tracks. one hourly itnernavls
-mycl <- makeCluster(detectCores() - 4) 
+mycl <- makeCluster(detectCores() - 2) 
 
 clusterExport(mycl, "move_ls") #define the variable that will be used within the function
 
@@ -153,7 +153,7 @@ clusterEvalQ(mycl, {
 })
 
 (start_time <- Sys.time())
-sp_ls_1hr <- parLapply(mycl, move_ls[-7], function(species){
+mv_df_1hr <- parLapply(mycl, move_ls[-7], function(species){
 #sp_ls_1hr <- lapply(move_ls, function(species){
   lapply(split(species), function(track){
     track_th <- track %>%
@@ -162,17 +162,18 @@ sp_ls_1hr <- parLapply(mycl, move_ls[-7], function(species){
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
     track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    track_th
+    as.data.frame(track_th)
   }) %>% 
     reduce(rbind) #gets converted to a spatialpointsdf
   
-})
+}) %>% 
+  reduce(rbind)
 
 Sys.time() - start_time #10 min
 
 stopCluster(mycl)
 
-save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_1hr_30_no_nb.RData")
+save(mv_df_1hr , file = "R_files/move_1hr_30_no_nb.RData")
 
 
 
@@ -203,7 +204,7 @@ nb_1hr_mv <- move(x = nb_1hr$coords.x1,y = nb_1hr$coords.x2,time = nb_1hr$timest
 timeLag(nb_1hr_mv, units = "mins")
 
 save(nb_1hr_mv, file = "R_files/nazcabooby_1hr.RData")
-
+save(nb_1hr, file = "R_files/nazcabooby_1hr_df.RData")
 
 
 # Peter Ryan data prep ######
@@ -230,11 +231,11 @@ move_ls <- lapply(split(PR_data_split,PR_data_split$common_name),function(x){
 })
 
 #original sampling frequency
-str(lapply(move_ls, timeLag, units = "hours")) #almost hourly
+str(lapply(move_ls, timeLag, units = "mins")) 
 
 #sub-sample to hourly 
 (start_time <- Sys.time())
-sp_ls_1hr <- lapply(move_ls, function(species){
+df_pr_1hr <- lapply(move_ls, function(species){
   
   lapply(split(species), function(track){
     track_th <- track %>%
@@ -243,16 +244,19 @@ sp_ls_1hr <- lapply(move_ls, function(species){
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
     track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    track_th
+    as.data.frame(track_th)
   }) %>% 
-    reduce(rbind) #gets converted to a spatialpointsdf
+    reduce(rbind) 
   
-})
+}) %>% 
+  reduce(rbind)
 
 Sys.time() - start_time # < 1 min
 
+df_pr_1hr <- df_pr_1hr %>% 
+  dplyr::select(-c(8:12))
 
-save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_1hr_30_PR.RData")
+save(df_pr_1hr, file = "R_files/PR_1hr_30.RData")
 
 
 # Gremillet data prep ######
@@ -334,4 +338,83 @@ rtt_mv <- move(x = rtt$location.long,y = rtt$location.lat,time = rtt$timestamp,d
 timeLag(rtt_mv) #this is already one-hourly :D
 
 save(rtt_mv, file = "R_files/redtailedtropicbird_1hr.RData")
+save(rtt, file = "R_files/redtailedtropicbird_1hr_df.RData")
 
+
+# step 2: put everything together # ------------------------------------------
+
+#open data ####
+# load("R_files/move_1hr_30_no_nb.RData") #mv_df_1hr
+# load("R_files/nazcabooby_1hr_df.RData") #nb_1hr
+# load("R_files/PR_1hr_30.RData") #df_pr_1hr
+# load("R_files/gannets_1hr.RData") #gannets_1hr
+# load("R_files/redtailedtropicbird_1hr_df.RData") #rtt
+
+files <- list("R_files/move_1hr_30_no_nb.RData",
+              "R_files/nazcabooby_1hr_df.RData",
+              "R_files/PR_1hr_30.RData",
+              "R_files/gannets_1hr.RData",
+              "R_files/redtailedtropicbird_1hr_df.RData")
+
+
+data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+
+
+#make sure all have the same column names 
+data_ls <- lapply(data_ls,function(x){
+  
+  if(!("location.lat" %in% colnames(x))){
+    x <- x %>% 
+      rename(location.lat = Latitude,
+             location.long = Longitude)
+  }
+  
+  if(!("TripID" %in% colnames(x))){
+    x <- x %>% 
+      rename(TripID = TrackId)
+  }
+  
+  if(!("indID" %in% colnames(x)) & "device" %in% colnames(x)){
+    x <- x %>% 
+      rename(indID = device)
+  }
+  if(!("indID" %in% colnames(x)) & "BirdId" %in% colnames(x)){
+    x <- x %>% 
+      rename(indID = BirdId)
+  }
+  
+  if(!("FlyingSitting" %in% colnames(x))) {
+    x <- x %>% 
+      mutate(FlyingSitting = NA)
+  }
+  
+  if(!("sci_name" %in% colnames(x)) & "scientific_name" %in% colnames(x)) {
+    x <- x %>% 
+      rename(sci_name = scientific_name)
+  }
+  
+  x <- x %>% 
+    mutate_at(c("TripID", "indID", "sci_name", "FlyingSitting"), as.character)
+  
+  if("study.name" %in% colnames(x) & "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”" %in% unique(x$study.name)) {
+    
+    x[x$study.name == "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”", "sci_name"] <- "Sula dactylatra"
+    
+  }
+  
+  x
+  
+})
+
+
+
+#common column names:
+cols <- Reduce(intersect, lapply(data_ls, colnames))
+
+#put all data together
+
+data_df <- data_ls %>% 
+  map(dplyr::select, cols) %>% 
+  reduce(rbind)
+
+save(data_df, file = "R_files/all_spp_df_apr8.RData")
