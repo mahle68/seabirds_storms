@@ -1,8 +1,7 @@
-#script for investigating and running ssf on all seabird data
+#script for investigating and running ssf on all seabird data. second batch of species
 #March 11, 2021. Elham Nourani. Radolfzell am Bodensee
-#flyigsitting: threshold is 3 km/h for one-hourly data (for wandering albatrosses).
 
-#look at section 9.5 in Virgilio's book for drawing smooths for each level of a factor variable (doesnt work for binned data)
+
 
 library(tidyverse)
 library(lubridate)
@@ -66,21 +65,14 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 
-#----------- Prep work ----
-
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
-#----------- STEP 1: open data ----
+
+# Movebank data prep ######
 
 #movebank files from Sophie
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 lapply(files, load,.GlobalEnv)
-
-
-#red-tailed tropicbird
-#rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
-#                stringsAsFactors = F, fileEncoding="latin1") %>% 
-#  mutate(FlyingSitting = "flying")
 
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
@@ -118,11 +110,7 @@ data_df <- data_ls %>%
 save(data_df, file =  "R_files/move_data_df.RData")
 
 
-
-
-#----------- STEP 2: filter for breeding season? ----
-
-#----------- STEP 3: sub-sample: hourly ----
+# one-hourly subsample
 
 load("R_files/move_data_df.RData")
 #remove duplicated timestamps
@@ -146,42 +134,6 @@ move_ls <- lapply(split(data_df,data_df$study.name),function(x){
 str(lapply(move_ls, timeLag, units = "hours"))
 
 save(move_ls, file =  "R_files/move_data_mv_ls.RData")
-
-
-
-#do nazca booby separately
-
-species <- move_ls[[7]]  #i get an error trying to run this. so, filter out na values and sitting points
-nb_flying <- species[!(is.na(species$FlyingSitting)) & species$FlyingSitting == "flying",]
-
-  mycl <- makeCluster(detectCores() - 4) 
-  
-  clusterExport(mycl, "nb_flying") #define the variable that will be used within the function
-  
-  clusterEvalQ(mycl, {
-    library(move)
-    library(sp)
-    library(tidyverse)
-    
-  })
-  
-  (start_time <- Sys.time())
-  nazca_sp_1hr <- parLapply(mycl, split(nb_flying), function(track){
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
-    track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
-    track_th
-  }) %>% 
-    reduce(rbind) #gets converted to a spatialpointsdf
-  
-  
-  Sys.time() - start_time
-  
-  stopCluster(mycl)
-
 
 
 # spp other than nazca
@@ -224,640 +176,162 @@ save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storm
 
 
 
+#nazca booby separately. thinTrackTime produces C stack errors. so try the quick and easy way
+load("R_files/move_data_mv_ls.RData")
+
+nb <- move_ls[[7]]  #i get an error trying to run this. so, filter out na values and sitting points
+nb <- as.data.frame(move_ls[[7]])
+
+
+nb_1hr <- nb %>% 
+  arrange(timestamp) %>% 
+  mutate(hour = hour(timestamp),
+         date = as.Date(timestamp)) %>% 
+  group_by(TripID, date, hour) %>% #year is already taken care of in the track ID
+  slice(1) %>% 
+  ungroup()
+  
+
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_1hr$TripID),timestamps = nb_1hr$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows.
+
+#convert to move
+nb_1hr_mv <- move(x = nb_1hr$coords.x1,y = nb_1hr$coords.x2,time = nb_1hr$timestamp,data =nb_1hr,animal = nb_1hr$TripID, proj = wgs)
+
+
+timeLag(nb_1hr_mv, units = "mins")
+
+save(nb_1hr_mv, file = "R_files/nazcabooby_1hr.RData")
 
 
 
+# Peter Ryan data prep ######
+#peter ryan data from Sophie
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 
 
-#---------------------------------------------------------
-#csv files
 
-rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
-                 stringsAsFactors = F,fileEncoding="latin1")
-cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv")
-ng <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_NorthernGannet_IleRouzic/Gannet-GPS-Rouzic-DavidGremillet-AllYears.csv")
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(PR_data_split$TripID),timestamps = PR_data_split$date_time,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-#%>% 
-  #full_join(read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/split_trips_mvb/FUL_2018-19_ColonyLoc_ParamWind.csv",
-  #                   stringsAsFactors = F,fileEncoding="latin1")) %>%  #this is not movebank data
-#  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))#,
-         #Year = as.character(Year)) #to match the RData file structures
+PR_data_split <- PR_data_split[-rows_to_delete,] 
 
-#merge everything together
-data <- MB_ManxShearwater_split_wind %>% 
-  mutate(tag.local.identifier = as.character(tag.local.identifier)) %>% 
-  full_join(MB_MaskedBoobies_split_wind) %>% 
-  full_join(MB_FREG_2011) %>% 
-  full_join(MB_FREG_c) %>% 
-  full_join(MB_TropicBirds_split_wind) %>% 
-  #full_join(MB_YelkouanSh_Malta_split_wind) %>% 
-  #full_join(csvs) %>% 
-  rename(species = individual.taxon.canonical.name) %>% 
-  mutate(TripID = as.character(TripID)) %>% 
-  #filter (FlyingSitting == "flying") %>% masked boobies and Puffinus puffinus dont have this.
-  arrange(species, TripID, date_time) #%>% 
-  #filter(windSpeed_kmh >= 20)# %>% #only keep points with winds higher than 20 kmh
-  #mutate(row_id = row_number())
-
-save(data, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
-
-
-# ---------- STEP 2: sub-sample to one hourly #####
-
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movebank_data_split_trip_new_species.RData")
-
-#check current sampling rate
-move_ls <- lapply(split(data, data$species),function(x){
+#create move object
+move_ls <- lapply(split(PR_data_split,PR_data_split$common_name),function(x){
+  
   x <- x %>%
     arrange(TripID, date_time) %>% 
     as.data.frame()
-  mv <- move(x = x$Longitude, y = x$Latitude, time = x$date_time, data = x, animal = x$TripID, proj = wgs)
-  mv
   
+  mv <- move(x = x$location.long,y = x$location.lat,time = x$date_time,data = x,animal = x$TripID,proj = wgs)
+  mv
 })
 
+#original sampling frequency
+str(lapply(move_ls, timeLag, units = "hours")) #almost hourly
 
-str(lapply(move_ls, timeLag, units = "hours"))
-
-
-#thin the tracks. one hourly itnernavls
-move_ls_1hr <- lapply(move_ls, function(species){
+#sub-sample to hourly 
+(start_time <- Sys.time())
+sp_ls_1hr <- lapply(move_ls, function(species){
+  
   lapply(split(species), function(track){
-    
     track_th <- track %>%
       thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(15, units='mins'))#the unselected bursts are the large gaps between the selected ones
+                    tolerance = as.difftime(30, units='mins'))#the unselected bursts are the large gaps between the selected ones
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th <- as(track_th,"Move") #convert back to a move object (from a moveburst)
     track_th <- track_th[is.na(track_th$selected) | track_th$selected == "selected",]
     track_th
-  })
-  
-})
-
-save(move_ls_1hr, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly.RData")
-
-
-#----------- STEP 3: assign flying/sitting  ----
-
-load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly.RData") #data
-
-flying_ls <- lapply(move_ls_1hr,function(x){ #for each species. x is a list of move objects
-  
-  x_2 <- lapply(x,function(y){
-    
-    y$speed_ms <- c(NA, speed(y))
-    y$speed_kmh_E <- y$speed_ms * 3.6
-    y$FlyingSitting_E <- ifelse(y$speed_kmh_E > 2, "flying", "sitting")
-    
-    #subset for flying.
-    #also add time lag. for bursting later
-    y$timelag <- c(NA, timeLag(y, units="hours"))
-    
-    y
-    
-  })
-  
-  do.call(rbind,x_2)
-  
-})
-
-save(flying_ls, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_one_hourly_fl_si.RData")
-
-#----------- STEP 4: prepare alternative steps ----
-
-#assign bursts
-
-
-#investage recording regime for each specie
-str(lapply(move_ls, timeLag, units = "hours"))
-
-hrs <- 2 #how long should the steps be? temporally
-n <- 20 #how many alternative steps?
-
-mycl <- makeCluster(detectCores() - 6) #6 cores, two for each species
-
-clusterExport(mycl, c("move_ls", "hrs", "n",  "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(dplyr)
-  library(purrr)
-  library(sf)
-  library(raster)
-  library(move)
-  library(sp)
-  library(circular)
-  library(CircStats)
-  library(fitdistrplus)
-  library(tidyr)
-})
-
-start_time <- Sys.time()
-
-used_av_ls <- parLapply(cl = mycl, X = move_ls,fun = function(species){ 
-  
-  sp_obj_ls <- lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted trackments
-    
-    #--STEP 1: thin the data to n-hourly intervals
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(hrs, units='hours'),
-                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
-    #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
-    
-    if(nrow(track_th@data) == 1){
-      track_th@data$burst_id <- track_th$burst_id
-    } else {for(i in 2:nrow(track_th@data)){
-      
-      if(i== nrow(track_th@data)){
-        track_th@data$burst_id[i]<-NA
-      } else
-        if(track_th@data[i-1,"selected"] == "selected"){
-          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]
-        } else {
-          track_th@data$burst_id[i]<-track_th@data[i-1,"burst_id"]+1
-        }
-    }
-    }
-    #convert back to a move object (from move burst)
-    track_th <- as(track_th,"Move")
-    
-    #--STEP 3: calculate step lengths and turning angles 
-    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-    burst_ls<-split(track_th,track_th$burst_id)
-    burst_ls<-Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
-    
-    burst_ls<-lapply(burst_ls,function(burst){
-      burst$step_length<-c(distance(burst),NA) #
-      burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
-      burst
-    })
-    
-    #put burst_ls into one dataframe
-    bursted_sp <- do.call(rbind,burst_ls) 
-    
-    #reassign values
-    
-    if(length(bursted_sp) >= 1){
-      bursted_sp$TripID <- track@idData$TripID
-      bursted_sp$species <- track@idData$species
-    }
-    
-    bursted_sp$TripID<-track@idData$TripID 
-    bursted_sp
   }) %>% 
-    Filter(function(x) length(x) > 1, .) #remove tracks with no observation (these have only one obs due to the assignment of trackment id)
+    reduce(rbind) #gets converted to a spatialpointsdf
   
-  #--STEP 4: estimate step length and turning angle distributions
-  #put everything in one df
-  bursted_df <- sp_obj_ls %>%  
-    reduce(rbind) %>% 
-    as.data.frame() %>%
-    filter(step_length < 500000) %>% #filter out points with over 500 km step length. outliers 
-    dplyr::select(-c("coords.x1","coords.x2"))
-  
-  #estimate von Mises parameters for turning angles
-  #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-  mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  
-  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-  sl<-bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
-  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
-  
-  #plot
-  jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_",bursted_df$species[1], "_", hrs, "hr_", n, "n",".jpeg"))
-  #X11()
-  par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-  
-  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]), freq=F, main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-  #mtext(paste0("Step length and turning angle distributions (2-hr) ",bursted_df$species[1]), side = 3, outer =T,line = -3)
-  mtext(paste0("Step length and turning angle distributions (", hrs, "-hr) ", bursted_df$species[1]), side = 3, outer =T,line = -3, font = 2) 
-  dev.off()
-  
-  
-  #--STEP 5: produce alternative steps
-  used_av_track <- lapply(sp_obj_ls, function(track){ #for each track
-    
-    used_av_burst <- lapply(split(track,track$burst_id),function(burst){ #for each burst,
-      
-      #assign unique step id
-      burst$step_id <- 1:nrow(burst)
-      
-      used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
-        
-        current_point<- burst[this_point,]
-        previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
-        used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
-        
-        #randomly generate 20 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl <- rgamma(n = n, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
-        
-        #calculate bearing of previous point
-        #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
-        prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
-                                          previous_point@coords[,1], current_point@coords[,1])
-        
-        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
-        current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
-        rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-        
-        #covnert back to lat-lon proj
-        rnd_sp <- rnd
-        coordinates(rnd_sp) <- ~lon+lat
-        proj4string(rnd_sp) <- meters_proj
-        rnd_sp <- spTransform(rnd_sp,wgs)
-        
-        #put used and available points together
-        df <- used_point@data %>%  
-          slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
-          mutate(location.long = c(head(Longitude,1),rnd_sp@coords[,1]),
-                 location.lat = c(head(Latitude,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
-          rowwise() %>% 
-          mutate(heading = NCEP.loxodrome.na(lat1=current_point$Latitude,lat2=location.lat,lon1=current_point$Longitude,lon2= location.long)) %>% 
-          #dplyr::select(-c("u10m", "t2m", "press", "sst", "v10m", "X", "selected")) %>% 
-          as.data.frame()
-        
-        df[df$used == 0, c("step_length", "turning_angle")] <- NA
-        df
-        
-      }) %>% 
-        reduce(rbind)
-      used_av_step
-    }) %>% 
-      reduce(rbind)
-    used_av_burst
-  }) %>% 
-    reduce(rbind)
-  used_av_track
 })
 
-Sys.time() - start_time #22 min
-
-stopCluster(mycl)
-
-save(used_av_ls, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/3spp_alt_steps_", hrs, "hr_", n, "n",".RData"))
-
-#prepare to submit to Movebank
-
-load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/Mvbnk_alt_steps_2hr_20n.RData")
-
-used_av_all <- lapply(used_av_ls, function(x){
-  x %>% 
-    dplyr::select("location.lat","location.long", "date_time" , "TripID", "species", "step_id", "turning_angle",
-                  "step_length", "burst_id", "heading", "used") %>% 
-    mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
-    as.data.frame()
-}) %>% 
-  reduce(rbind)
-#row numbers are over a million, so do separate into two dfs for annotation
-colnames(used_av_all)[c(1,2)] <- c("location-lat","location-long") #rename columns to match movebank format
-
-write.csv(used_av_all, paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/Mvbnk_alt_steps_", hrs, "hr_", n, "n",".csv"))
+Sys.time() - start_time # < 1 min
 
 
-#----------- STEP 2: data exploration!#####
-
-#open annotated data
-ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/annotation/mv_ssf/Mvbnk_alt_steps_2hr_20n.csv-1586182316348416711.csv",
-                stringsAsFactors = F)
-
-ann_cmpl <-  ann %>% 
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
-         u10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.U.Component.,
-         v10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.V.Component.,
-         wave_h = ECMWF.Interim.Full.Daily.SFC.Significant.Wave.Height,
-         air_pr = ECMWF.Interim.Full.Daily.SFC.Surface.Air.Pressure) %>% 
-  mutate(delta_t = sst - t2m,
-         wind_support_ms = wind_support(u=u10,v=v10,heading=heading),
-         cross_wind_ms = cross_wind(u=u10,v=v10,heading=heading),
-         abs_cross_wind_ms = abs(cross_wind(u=u10,v=v10,heading=heading)),
-         wind_speed_ms = sqrt(u10^2 + v10^2),
-         stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
-  mutate(wind_support_kmh = wind_support_ms * 3.6,
-         cross_wind_kmh = cross_wind_ms * 3.6,
-         wind_speed_kmh = wind_speed_ms * 3.6,
-         abs_cross_wind_kmh = abs_cross_wind_ms * 3.6) %>% 
-  as.data.frame()
-
-save(ann_cmpl, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/Mvbnk_2hr_20n_ann.RData")
+save(sp_ls_1hr, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/movels_1hr_30_PR.RData")
 
 
-#plots
+# Gremillet data prep ######
+cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv") %>% 
+  mutate(common_name = "Cape gannet",
+         scientific_name = "Morus capensis")
+ng <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_NorthernGannet_IleRouzic/Gannet-GPS-Rouzic-DavidGremillet-AllYears.csv") %>% 
+  mutate(common_name = "Northern gannet",
+         scientific_name = "Morus bassanus",
+         DateGMT = as.character(as.Date(DateGMT, format = "%d/%m/%Y")))# %>% 
+#rowwise() %>% 
+#mutate(DateGMT = str_replace_all(DateGMT, "/", "-")) %>% 
+#ungroup()
 
-#boxplots
-jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/Used_avail_Mvbnk_2hr.jpeg", 
-     width = 12, height = 10, units = "in", res = 300)
 
-#X11(width = 12, height = 10)
-par(mfrow= c(3,1), oma = c(0,0,3,0))
-for(i in c("wind_support_kmh", "cross_wind_kmh","wind_speed_kmh")){
-  
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-
-  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-          xaxt = "n", add = T, boxfill = "grey",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
-
-}
-mtext(paste0("Used and available wind conditions- Movebank data (", hrs, " hr)"), side = 3, outer = T, cex = 1.3)
-dev.off()
-
-#----------- STEP 4: keep segments with at least n points ----
-
-segs_to_keep <- windy %>% 
-  group_by(segID) %>% 
-  summarise(n_pts = length(segID)) %>% 
-  filter(n_pts >= 10)
-
-windy_sf <- windy %>% 
-  filter(segID %in% segs_to_keep$segID) %>% 
-  st_as_sf(coords = c("Longitude", "Latitude")) %>% 
-  st_set_crs(wgs)
-
-mapview(windy_sf,zcol = "segID")
-
-#----------- STEP 5: sub-sample to n hours ----
-
-hrs <- 2 #how long should the steps be? temporally
-
-#selecting every nth row in each segment
-windy_2hr <- windy_sf %>% 
-  group_by(segID) %>% 
-  filter(row_number() %% hrs == 1) %>% 
+gannets <- cg %>% 
+  full_join(ng) %>%
+  rowwise() %>% 
+  mutate(timestamp = paste(DateGMT,TimeGMT, sep = " ")) %>% 
   ungroup() %>% 
-  arrange(segID, date_time) #this is necessary for making a move object later
+  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
 
-mapview(windy_2hr,zcol = "segID")
 
-#----------- STEP 6: calculate step lengths and turning angles ----
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets$TrackId),timestamps = gannets$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-#create a move object
+gannets <- gannets[-rows_to_delete,] 
 
-mv <- move(x = st_coordinates(windy_2hr)[,1], y = st_coordinates(windy_2hr)[,2], time = windy_2hr$date_time, 
-           data = st_drop_geometry(windy_2hr), animal = windy_2hr$segID, proj = wgs)
 
-#sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-burst_ls <- split(mv)
-burst_ls <- Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
+save(gannets, file = "R_files/gannets_ls.RData")
 
-#calculate step lengths and turning angles
-burst_ls <- lapply(burst_ls,function(burst){
-  burst$step_length <- c(distance(burst), NA) 
-  burst$turning_angle <- c(NA,turnAngleGc(burst), NA)
-  burst$segID <- burst@idData$segID
-  burst
+#create one move stack
+
+load("R_files/gannets_ls.RData")
+
+
+gannets_1hr <- gannets %>% 
+  arrange(timestamp) %>% 
+  mutate(hour = hour(timestamp)) %>% 
+  group_by(TrackId, DateGMT, hour) %>%
+  slice(1) %>% 
+  ungroup()
+
+move_ls_gannets <- lapply(split(gannets_1hr,gannets_1hr$common_name),function(x){
+  
+  x <- x %>%
+    arrange(TrackId, timestamp) %>% 
+    as.data.frame()
+  
+  mv <- move(x = x$Longitude,y = x$Latitude,time = x$timestamp,data = x,animal = x$TrackId,proj = wgs)
+  mv
 })
 
-bursted_sp <- do.call(rbind,burst_ls)
 
-#----------- STEP 7: estimate step length and turning angle distributions ----
+str(lapply(move_ls_gannets, timeLag, units = "mins")) #almost hourly
 
-#create a df
-bursted_df <- as.data.frame(bursted_sp) %>% 
-  filter(step_length < 500000) %>% #filter out points with over 500 km step length. outliers 
+save(gannets_1hr, file = "R_files/gannets_1hr.RData")
+save(move_ls_gannets, file = "R_files/gannets_1hr_mv.RData")
 
-#estimate von Mises parameters for turning angles
-#calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
+# Red-tailed tropicbird ######
+rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Movebank/Red-tailed tropicbirds (Phaethon rubricauda) Round Island.csv", 
+                stringsAsFactors = F,fileEncoding="latin1") %>% 
+  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  rename(sci_name = individual.taxon.canonical.name,
+         indID = individual.local.identifier,
+         TripID = comments) %>% 
+  mutate(month = month(timestamp),
+         year = year(timestamp))
 
-#estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
-fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(rtt$TripID),timestamps = rtt$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows.
 
-#plot
-#jpeg("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_4hr.jpeg")
-#jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/ta_sl_dist_WAAL_", hrs, "hr_", n, "n",".jpeg"))
-#X11();
-par(mfrow=c(1,2))
-hist(sl,freq=F,main="",xlab = "Step length (km)")
-plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                        rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-
-hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-mtext(paste0("WAAL_strong winds_ Step length and turning angle distributions (", hrs, "-hr)"), side = 3, outer =T,line = -4, font = 2) 
-dev.off()
-
-#----------- STEP 8: generate alternative steps ----
-
-n <- 20 #how many alternative steps?
-
-bursted_sp <- bursted_df
-coordinates(bursted_sp) <- ~ coords.x1 + coords.x2
-proj4string(bursted_sp) <- wgs
-
-used_av_burst <- lapply(split(bursted_sp,bursted_sp$segID),function(burst){ #for each burst (segID),
-  
-  #assign unique step id
-  burst$step_id <- 1:nrow(burst)
-  
-  used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
-    
-    current_point<- burst[this_point,]
-    previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
-    used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
-    
-    #randomly generate n step lengths and turning angles
-    rta <- as.vector(rvonmises(n = n, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-    rsl<-rgamma(n= n, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
-    
-    #calculate bearing of previous point
-    #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
-    prev_bearing<-NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
-                                    previous_point@coords[,1], current_point@coords[,1])
-    
-    #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
-    current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
-    rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-    
-    #covnert back to lat-lon proj
-    rnd_sp<-rnd
-    coordinates(rnd_sp)<-~lon+lat
-    proj4string(rnd_sp)<-meters_proj
-    rnd_sp<-spTransform(rnd_sp,wgs)
-    
-    #put used and available points together
-    df <- as.data.frame(used_point) %>%  
-      slice(rep(row_number(),n+1)) %>% #paste each row 20 times for the used and alternative steps
-      mutate(Longitude = c(head(coords.x1,1),rnd_sp@coords[,1]),
-             Latitude = c(head(coords.x2,1),rnd_sp@coords[,2]),
-             used = c(1,rep(0,n)))  %>% #one hour after the start point of the step
-      rowwise() %>% 
-      mutate(heading = NCEP.loxodrome.na(lat1 = current_point@coords[,2], lat2 = Latitude, lon1 = current_point@coords[,1], lon2 = Longitude)) %>% 
-      #dplyr::select(-c("accumulated_dist", "turningAngle_deg", "turningAngle_rad", "speed_kmh")) %>% 
-      as.data.frame()
-    
-    # df[df$used == 0, c("turning_angle", "step_length", "angleBirdWind", "windAzimuth", "windSpeed_kmh", "windDirection", "windSpeed_ms", "v_wind_interp", 
-    #                   "u_wind_interp", "v_wind", "t", "travelled_distance_km", "DistColo")] <- NA
-    
-    df
-    
-  }) %>% 
-    reduce(rbind)
-  used_av_step
-}) %>% 
-  reduce(rbind)
-used_av_burst
-
-#have a look
-X11();par(mfrow= c(1,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
-maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-points(used_av_burst[used_av_burst$used == 0,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "gray55")
-points(used_av_burst[used_av_burst$used == 1,c("Longitude","Latitude")], pch = 16, cex = 0.2, col = "orange")
-
-save(used_av_burst, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_onlyabove50kmh_alt_steps_", hrs, "hr_", n, "n",".RData"))
-
-#----------- STEP 9: annotation ----
-
-#prep for movebank annotation
-used_av_burst <- used_av_burst %>% 
-  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
-  as.data.frame()
-
-colnames(used_av_burst)[c(30,31)] <- c("location-long","location-lat") #rename columns to match movebank format
-write.csv(used_av_burst, paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/WAAL_onlyabove50kmh_alt_steps_", hrs, "hr_", n, "n",".csv"))
-
-#----------- STEP 10: data exploration ----
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/windy_WAAL_2hr/WAAL_onlyabove50kmh_alt_steps_2hr_20n.csv-517941447563460742/WAAL_onlyabove50kmh_alt_steps_2hr_20n.csv-517941447563460742.csv", stringsAsFactors = F)
-
-ann_cmpl <-  ann %>% 
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
-         u10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.U.Component.,
-         v10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.V.Component.,
-         sea_s_pr = ECMWF.Interim.Full.Daily.SFC.Mean.Sea.Level.Pressure,
-         wave_h = ECMWF.Interim.Full.Daily.SFC.Significant.Wave.Height,
-         air_pr = ECMWF.Interim.Full.Daily.SFC.Surface.Air.Pressure) %>% 
-  mutate(delta_t = sst - t2m,
-         wind_support_ms = wind_support(u=u10,v=v10,heading=heading),
-         cross_wind_ms = cross_wind(u=u10,v=v10,heading=heading),
-         abs_cross_wind_ms = abs(cross_wind(u=u10,v=v10,heading=heading)),
-         wind_speed_ms = sqrt(u10^2 + v10^2),
-         stratum = paste(TripID, step_id, sep = "_")) %>% #here, each trip is considered a burst, so there is no burst id
-  mutate(wind_support_kmh = wind_support_ms * 3.6,
-         cross_wind_kmh = cross_wind_ms * 3.6,
-         wind_speed_kmh = wind_speed_ms * 3.6,
-         abs_cross_wind_kmh = abs(cross_wind_ms * 3.6)) %>% 
-  as.data.frame()
-
-save(ann_cmpl, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/windy_WAAL_ssf_ann_2hr.RData")
-
-#boxplots
-jpeg("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/Used_avail_windy_WAAL_2hr.jpeg", width = 10, height = 4, units = "in", res = 300)
-#X11(width = 13, height = 4)
-par(mfrow= c(1,3), oma = c(0,0,3,0))
-for(i in c("wind_speed_kmh", "abs_cross_wind_kmh", "wind_support_kmh")){ #tried with non-interpolated wind support and crosswind and point of sail, but no difference
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"used"], 
-          xaxt = "n", boxfill = c("gray","orange"), main = i, xlab = "", ylab = "")
-  axis(1, labels = c("available", "used"), at = c(1,2), tck = 0)
-}
-mtext("Tracks over 50 km/h winds- 2hrly steps", side = 3, outer = T, cex = 1)
-
-dev.off()
+#convert to move
+rtt_mv <- move(x = rtt$location.long,y = rtt$location.lat,time = rtt$timestamp,data =rtt,animal = rtt$TripID, proj = wgs)
 
 
-#----------- STEP 11: analysis ----
+timeLag(rtt_mv) #this is already one-hourly :D
 
-#correlation
-ann_cmpl %>% 
-  dplyr::select(c("wind_speed_kmh","abs_cross_wind_kmh","wind_support_kmh")) %>% 
-  correlate() %>% 
-  stretch() %>% 
-  filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat
+save(rtt_mv, file = "R_files/redtailedtropicbird_1hr.RData")
 
-#z-transform and bin
-all_data <- ann_cmpl %>% 
-  mutate_at(c("wind_speed_kmh","cross_wind_kmh","abs_cross_wind_kmh","wind_support_kmh"),
-            list(z = ~scale(.))) %>%
-  #bin the data for smooth terms, otherwise I get an error that locations are too close.
-  mutate_at(c("wind_speed_kmh","abs_cross_wind_kmh","wind_support_kmh"),
-            list(group = ~inla.group(.,n = 50, method = "cut"))) %>%
-  as.data.frame()
-
-#repeat the individual ID column for INLA
-
-all_data <- all_data %>% 
-  mutate(BirdID1 = factor(BirdID),
-         BirdID2 = factor(BirdID),
-         BirdID3 = factor(BirdID),
-         BirdID4 = factor(BirdID))
-
-# set mean and precision for the priors of slope coefficients (fixed effects)
-mean.beta <- 0
-prec.beta <- 1e-4 #precision of 1e-4 equals a variance of 1e4 ;)
-
-#model with smooth terms for wind support and crosswind. omit wind speed
-
-model_title <- "Smooth terms for winds support, abs(cross wind) (binned data; no z_transformation)"
-
-formula <- used ~ -1 +
-  f(wind_support_kmh_group, model = "rw2", constr = F) + 
-  f(abs_cross_wind_kmh_group, model = "rw2", constr = F) + 
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
-
-(b <- Sys.time())
-m4 <- inla(formula, family ="Poisson", 
-           control.fixed = list(
-             mean = mean.beta,
-             prec = list(default = prec.beta)),
-           data = all_data,
-           num.threads = 10,
-           control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
-           #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
-           control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
-Sys.time() - b 
-
-summary(m4) #WAIC = 10274.53 ; MLik = -12130.70
-
-save(m4, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/windy_WAAL_wspt_cw_50_cuts.RData") #n of 50 for binned wind
-
-#plot
-wspt <- data.frame(x = m4$summary.random$wind_support_kmh_group[, "ID"],
-                   y = m4$summary.random$wind_support_kmh_group[, "mean"],
-                   ll95 = m4$summary.random$wind_support_kmh_group[,"0.025quant"],
-                   ul95 = m4$summary.random$wind_support_kmh_group[,"0.975quant"]
-)
-
-cw <- data.frame(x = m4$summary.random$abs_cross_wind_kmh_group[, "ID"],
-                 y = m4$summary.random$abs_cross_wind_kmh_group[, "mean"],
-                 ll95 = m4$summary.random$abs_cross_wind_kmh_group[,"0.025quant"],
-                 ul95 = m4$summary.random$abs_cross_wind_kmh_group[,"0.975quant"]
-)
-
-#plot with raw value and credible intervals
-jpeg(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/INLA_results_figures/windy_WAAL_2hrs_smooth_wspt_abs_cw.jpeg"), 
-     width = 10, height = 4, units = "in", res = 300)
-#X11(width = 8, height = 4)
-par(mfrow= c(1,2), oma = c(0,1,3,0), bty = "l")
-
-#plot(x = ann_cmpl$wind_speed_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind speed (kmh)", ylab = "exp(y)")
-#lines(wspd$x,exp(wspd$y)) 
-#polygon(x = c(wspd$x, rev(wspd$x)), y = c(exp(wspd$ll95),rev(exp(wspd$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
-
-plot(x = ann_cmpl$wind_support_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "wind support (kmh)", ylab = "exp(y)")
-lines(wspt$x,exp(wspt$y)) 
-polygon(x = c(wspt$x, rev(wspt$x)), y = c(exp(wspt$ll95),rev(exp(wspt$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
-
-plot(x = ann_cmpl$abs_cross_wind_kmh, y = ann_cmpl$used, pch = 16,  col = adjustcolor("grey", alpha.f = 0.1), xlab = "abs(cross wind) (kmh)", ylab = "exp(y)")
-lines(cw$x,exp(cw$y)) 
-polygon(x = c(cw$x, rev(cw$x)), y = c(exp(cw$ll95),rev(exp(cw$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
-
-mtext (paste0("INLA SSF analysis. Wandering Albatross (segments with wind >= 50 kmh)"), side = 3, outer = T, line = -0.2)
-mtext (paste0("2-hrly steps. ", model_title), 
-       side = 3, outer = T, line = -2)
-dev.off()
