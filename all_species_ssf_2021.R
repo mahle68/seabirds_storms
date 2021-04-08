@@ -61,17 +61,17 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 # ------------ step 1 : generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df_apr9.RData") #data_df
+load("R_files/all_spp_df_15min.RData") #data_df_all
 
 #remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df$TripID),timestamps = data_df$timestamp,
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-data_df <- data_df[-rows_to_delete,] 
+data_df_all <- data_df_all[-rows_to_delete,] 
 
 #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
 
-move_ls <- lapply(split(data_df,data_df$sci_name),function(x){
+move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
   x <- x %>%
     arrange(TripID, timestamp) %>% 
     as.data.frame()

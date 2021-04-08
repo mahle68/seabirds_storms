@@ -87,7 +87,6 @@ data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 data_ls$red_tailed_tropicbird <- rtt
 
 
-
 #make sure all have timestamp 
 data_ls <- lapply(data_ls,function(x){
   
@@ -133,17 +132,6 @@ data_df <- data_ls %>%
   ungroup()
 
 
-#minute subsampling for nazca
-nb_prop <- data_df %>% 
-  filter(sci_name == "Sula granti") %>% 
-  arrange(timestamp) %>% 
-  mutate(hour = hour(timestamp),
-         date = as.Date(timestamp)) %>% 
-  group_by(TripID, date, hour) %>% #year is already taken care of in the track ID
-  slice_sample(prop = 0.05) %>% 
-  ungroup()
-
-
 nb_15min <- data_df %>% 
   filter(sci_name == "Sula granti") %>% 
   mutate(dt_15min = round_date(timestamp, "15 minutes")) 
@@ -155,7 +143,6 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_15min$T
 nb_15min <- nb_15min[-rows_to_delete,] 
 
 
-  
 data_df <- data_df %>% 
   filter(sci_name != "Sula granti") %>% 
   full_join(nb_15min)
@@ -168,7 +155,7 @@ data_df %>%
   filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
   
 
-save(data_df, file = "R_files/mv_incl_nb_rtt_df.RData")
+save(data_df, file = "R_files/mv_incl_nb15min_rtt_df.RData")
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
@@ -193,13 +180,11 @@ gannets <- cg %>%
   ungroup() %>% 
   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
 
-
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets$TrackId),timestamps = gannets$timestamp,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
 gannets <- gannets[-rows_to_delete,] 
-
 
 save(gannets, file = "R_files/gannets_ls.RData")
 
@@ -213,32 +198,35 @@ gannets %>%
 
 load("R_files/gannets_ls.RData")
 
-gannets_4per1hr <- gannets %>%
+gannets_15min <- gannets %>%
   rename(TripID = TrackId,
-         indID = BirdId) %>% 
-  arrange(timestamp) %>% 
-  mutate(hour = hour(timestamp)) %>% 
-  group_by(TripID, DateGMT, hour) %>%
-  slice_sample(prop = 0.005) %>% 
-  ungroup()
+         indID = BirdId) %>%
+  mutate(dt_15min = round_date(timestamp, "15 minutes")) 
+
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets_15min$TripID),timestamps = gannets_15min$dt_15min,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+gannets_15min <- gannets_15min[-rows_to_delete,] 
 
 
-save(gannets_4per1hr, file = "R_files/gannets_4ptsperhour.RData")
+
+save(gannets_15min, file = "R_files/gannets_15min.RData")
 
 
 # step 2: put everything together # ------------------------------------------
 
 #open data ####
-files <- list("R_files/mv_incl_nb_rtt_df.RData",
+all_files <- list("R_files/mv_incl_nb15min_rtt_df.RData",
               "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata", #PR_data_split
-              "R_files/gannets_1min.RData")
+              "R_files/gannets_15min.RData")
 
 
-data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+data_ls_all <- sapply(all_files, function(x) mget(load(x)), simplify = TRUE)
 
 
 #make sure all have the same column names 
-data_ls <- lapply(data_ls,function(x){
+data_ls_all <- lapply(data_ls_all,function(x){
   
   if(!("location.lat" %in% colnames(x))){
     x <- x %>% 
@@ -272,12 +260,12 @@ data_ls <- lapply(data_ls,function(x){
 
 
 #common column names:
-cols <- Reduce(intersect, lapply(data_ls, colnames))
+cols <- Reduce(intersect, lapply(data_ls_all, colnames))
 
 #put all data together
 
-data_df <- data_ls %>% 
+data_df_all <- data_ls_all %>% 
   map(dplyr::select, cols) %>% 
   reduce(rbind)
 
-save(data_df, file = "R_files/all_spp_df_apr9.RData")
+save(data_df_all, file = "R_files/all_spp_df_15min.RData")
