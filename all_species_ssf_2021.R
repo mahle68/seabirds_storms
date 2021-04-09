@@ -5,6 +5,8 @@
 library(tidyverse)
 library(lubridate)
 library(sf)
+library(parallel)
+library(move)
 
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -61,7 +63,7 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 # ------------ step 1 : generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df_15min.RData") #data_df_all
+load("R_files/all_spp_df_25min.RData") #data_df_all
 
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,
@@ -81,9 +83,19 @@ move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
 })
 
 save(move_ls, file = "17_spp_move_ls.RData")
+save(move_ls, file = "17_spp_move_ls_25.RData")
+
+
+#### summary info
+
+lapply(move_ls, function(x) length(split(x)))
 
 ####
-load("17_spp_move_ls.RData")
+load("17_spp_move_ls_25.RData")
+
+#try a sample first, not including the gannets
+move_no_g <- move_ls[!(names(move_ls) %in% c("Morus capensis","Morus bassanus"))] 
+
 
 mycl <- makeCluster(10) 
 clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
@@ -100,7 +112,7 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
+parLapply(mycl, move_ls[-1], function(species){ #each species
   
   sp_obj_ls <- lapply(split(species), function(track){
     
@@ -253,7 +265,11 @@ used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each group
     
   }) %>% 
     reduce(rbind)
-  used_av_track
+  #used_av_track
+  
+  #save the file
+  save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/",species@idData$sci_name[1], ".RData"))
+  
 })
 
 Sys.time() - b 

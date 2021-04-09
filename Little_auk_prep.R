@@ -4,6 +4,7 @@ library(tidyverse)
 library(sp)
 library(sf)
 library(mapview)
+library(lubridate)
 
 
   #the 2011 data are very sparse and the foraging trips are not complete. so don't use
@@ -69,3 +70,16 @@ fichier_sortie = paste(file,"shp",sep="")
 writePointsShape(df, fichier_sortie)
 
 write(proj,file=paste(fichier_sortie,".prj",sep=""))
+
+
+
+########################
+#from sophie
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/LittleAuk_Greeland_Decimalcoords_split.Rdata") #LittleAuk_Greeland_Decimalcoords_split
+
+auk_sf <- st_as_sf(LittleAuk_Greeland_Decimalcoords_split, coords = c("Longitude", "Latitude"), crs = wgs)
+
+
+auk_15min <- auk_sf %>% 
+  group_by(TripID, hour(timestamp)) %>% 
+  slice(1)

@@ -2,6 +2,8 @@
 #March 11, 2021. Elham Nourani. Radolfzell am Bodensee
 #update: don't subsample hourly. just subset to closest minute for gannets and nazca boobies (the sub-min resolutions that cause the C stack error.)
 #update: one minute is still causing errors. try rounding up to 15 min and then removing duplicated points
+#update: nazca booby and magnificient frigatebird are still problematic, so reduce to 25 min.
+
 
 library(tidyverse)
 library(lubridate)
@@ -132,20 +134,33 @@ data_df <- data_ls %>%
   ungroup()
 
 
-nb_15min <- data_df %>% 
+mf_25min <- data_df %>% 
+  filter(sci_name == "Fregata magnificens") %>% 
+  mutate(dt_25min = round_date(timestamp, "25 minutes")) 
+
+nb_25min <- data_df %>% 
   filter(sci_name == "Sula granti") %>% 
-  mutate(dt_15min = round_date(timestamp, "15 minutes")) 
+  mutate(dt_25min = round_date(timestamp, "25 minutes")) 
+
 
 #remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_15min$TripID),timestamps = nb_15min$dt_15min,
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_25min$TripID),timestamps = nb_25min$dt_25min,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-nb_15min <- nb_15min[-rows_to_delete,] 
+nb_25min <- nb_25min[-rows_to_delete,] 
+
+
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(mf_25min$TripID),timestamps = mf_25min$dt_25min,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+mf_25min <- mf_25min[-rows_to_delete,] 
+
 
 
 data_df <- data_df %>% 
-  filter(sci_name != "Sula granti") %>% 
-  full_join(nb_15min)
+  filter(!(sci_name %in% c("Sula granti", "Fregata magnificens"))) %>% 
+  full_join(nb_25min) %>% 
+  full_join(mf_25min)
 
 
 #make sure all track IDs are unique
@@ -155,7 +170,7 @@ data_df %>%
   filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
   
 
-save(data_df, file = "R_files/mv_incl_nb15min_rtt_df.RData")
+save(data_df, file = "R_files/mv_incl_nbmf25min_rtt_df.RData")
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
@@ -217,7 +232,7 @@ save(gannets_15min, file = "R_files/gannets_15min.RData")
 # step 2: put everything together # ------------------------------------------
 
 #open data ####
-all_files <- list("R_files/mv_incl_nb15min_rtt_df.RData",
+all_files <- list("R_files/mv_incl_nbmf25min_rtt_df.RData",
               "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata", #PR_data_split
               "R_files/gannets_15min.RData")
 
@@ -268,4 +283,4 @@ data_df_all <- data_ls_all %>%
   map(dplyr::select, cols) %>% 
   reduce(rbind)
 
-save(data_df_all, file = "R_files/all_spp_df_15min.RData")
+save(data_df_all, file = "R_files/all_spp_df_25min.RData")
