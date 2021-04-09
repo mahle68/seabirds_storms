@@ -93,8 +93,8 @@ lapply(move_ls, function(x) length(split(x)))
 ####
 load("17_spp_move_ls_25.RData")
 
-#try a sample first, not including the gannets
-move_no_g <- move_ls[!(names(move_ls) %in% c("Morus capensis","Morus bassanus"))] 
+#exclude nazca booby and mag frigatebird
+move_no_nb_mf <- move_ls[!(names(move_ls) %in% c("Sula granti","Fregata magnificens"))] 
 
 
 mycl <- makeCluster(10) 
@@ -112,7 +112,9 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-parLapply(mycl, move_ls[-1], function(species){ #each species
+#used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each species
+  
+parLapply(mycl, move_ls, function(species){ #each species
   
   sp_obj_ls <- lapply(split(species), function(track){
     
@@ -275,4 +277,63 @@ parLapply(mycl, move_ls[-1], function(species){ #each species
 Sys.time() - b 
 
 stopCluster(mycl) 
+
+
+
+# ---------- STEP 4: annotate#####
+
+files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/", full.names = T)
+
+used_av_ls_60_30 <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+
+load("2021/ssf_input_all_60_30_150_updated.RData") #used_av_ls_60_30
+
+#create one dataframe with movebank specs
+used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
+  
+  data <- used_av_ls_60_30[[i]] %>% 
+    mutate(date_time = timestamp,
+           timestamp = paste(as.character(timestamp),"000",sep = ".")) %>% 
+    
+    as.data.frame()
+}) %>% 
+  reduce(rbind)
+
+save(used_av_ls_60_30, file = "R_files/ssf_input_all_df_60_30_50_15spp.RData")
+
+#rename columns
+colnames(used_av_df_60_30)[c(14,15)] <- c("location-long","location-lat")
+
+write.csv(used_av_df_60_30, "R_files/ssf_input_df_60_30_50_15spp.csv")
+
+
+#create 3 files
+df_1 <- used_av_df_60_30 %>% 
+  slice(1:(nrow(used_av_df_60_30)/3))
+write.csv(df_1, "R_files/ssf_input_df_60_30_50_15spp_1.csv")
+
+df_2 <- used_av_df_60_30 %>% 
+  slice(((nrow(used_av_df_60_30)/3) + 1):((nrow(used_av_df_60_30)/3)*2))
+write.csv(df_2, "R_files/ssf_input_df_60_30_50_15spp_2.csv")
+
+df_3 <- used_av_df_60_30 %>% 
+  slice((((nrow(used_av_df_60_30)/3)*2) + 1):nrow(used_av_df_60_30))
+write.csv(df_3, "R_files/ssf_input_df_60_30_50_15spp_3.csv")
+
+
+# # summary stats
+# used_av_df_60_30 %>% 
+#   #group_by(species) %>% 
+#   group_by(group) %>% 
+#   summarise(yrs_min = min(year(date_time)),
+#             yrs_max = max(year(date_time)),
+#             n_ind = n_distinct(ind),
+#             n_tracks = n_distinct(track))
+
+#visual inspection
+data_sf <- used_av_df_60_30 %>% 
+  filter(used == 1) %>% 
+  st_as_sf(coords = c(2,3), crs = wgs)
+
+mapview(data_sf, zcol = "species")
 
