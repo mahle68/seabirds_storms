@@ -58,9 +58,9 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
-
-# ------------ step 1 : generate alternative steps ####
+# ----------- Step 1: generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
 load("R_files/all_spp_df_25min.RData") #data_df_all
@@ -280,20 +280,23 @@ stopCluster(mycl)
 
 
 
-# ---------- STEP 4: annotate#####
+# ----------- Step 2: annotate#####
 
 files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/", full.names = T)
 
 used_av_ls_60_30 <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
-load("2021/ssf_input_all_60_30_150_updated.RData") #used_av_ls_60_30
+save(used_av_ls_60_30, file = "R_files/ssf_input_all_60_30_15spp.RData")
+
+load("R_files/ssf_input_all_60_30_15spp.RData") #used_av_ls_60_30
 
 #create one dataframe with movebank specs
 used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
   
   data <- used_av_ls_60_30[[i]] %>% 
     mutate(date_time = timestamp,
-           timestamp = paste(as.character(timestamp),"000",sep = ".")) %>% 
+           timestamp = paste(as.character(timestamp),"000",sep = "."),
+           stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
     
     as.data.frame()
 }) %>% 
@@ -337,3 +340,158 @@ data_sf <- used_av_df_60_30 %>%
 
 mapview(data_sf, zcol = "species")
 
+
+#after movebank
+
+files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/15spp", pattern = ".csv",recursive = T, full.names = T)
+
+ann <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>% 
+  mutate(stratum = paste(TripID, burst_id, step_id, sep = "_"))
+
+# #extract startum IDs for those that have less than 20 alternative points over the sea
+# less_than_20 <- ann %>% 
+#   filter(used == 0) %>% 
+#   group_by(stratum) %>% 
+#   summarise(n = n()) %>% 
+#   filter(n < 20) #all are EF from Spain. It doesnt hurt to have less of that 
+# 
+# # retain 20 alternative steps per stratum
+# used <- ann %>% 
+#   filter(!(stratum %in% less_than_20$stratum)) %>% 
+#   filter(used == 1)
+# 
+# used_avail_20 <- ann %>% 
+#   filter(!(stratum %in% less_than_20$stratum)) %>% 
+#   filter(used == 0) %>% 
+#   group_by(stratum) %>% 
+#   sample_n(20, replace = F) %>% 
+#   ungroup() %>% 
+#   full_join(used) #append the used levels
+# 
+# #make sure all strata have 51 points
+# no_used <- used_avail_20 %>% 
+#   summarise(n = n()) %>% 
+#   filter(n < 21) # should be zero, and is! ;)
+
+ann_50_all <- ann %>%
+  filter(!(stratum %in% no_used$stratum)) %>% 
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+         v10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.,
+         wh = ECMWF.ERA5.SL.Significant.Wave.Height,
+         airp = ECMWF.ERA5.SL.Mean.Sea.Level.Pressure) %>%
+  mutate(row_id = row_number(),
+         delta_t = sst - t2m,
+         wind_support= wind_support(u = u10m,v = v10m, heading = heading),
+         cross_wind= cross_wind(u = u10m, v = v10m,heading = heading),
+         wind_speed = sqrt(u10m^2 + v10m^2),
+         abs_cross_wind = abs(cross_wind(u = u10m, v = v10m, heading = heading))) %>% 
+  st_as_sf(coords = c("location.long.1", "location.lat.1"), crs = wgs) %>% 
+  #mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  #mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+  #                         ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
+  as.data.frame()
+
+
+save(ann_50_all, file = "R_files/ssf_input_annotated_60_30_all.RData")
+
+
+# ----------- Step 3: box plots ####
+
+load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+
+#add common name
+ann_50_all <- ann_50_all %>% 
+  mutate(common_name = as.factor(sci_name))
+
+
+levels(ann_50_all$common_name) <-  c("Great shearwater", "Tristan albatross", "Great frigatebird", "Northern gannet", "Cape gannet",
+                                     "White-tailed tropicbird", "Red-tailed tropicbird", "Galapagos albatross", "Sooty albatross", "Grey petrel",
+                                     "Atlantic petrel", "Soft-plumaged petrel", "masked booby", "Red-footed booby", "A. yellow-nosed albatross")
+
+ann_50_all$common_name <- as.character(ann_50_all$common_name)
+#split the data into dynamic soarers and non dynamic soarers
+soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
+non_soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
+
+
+
+pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers.pdf", width = 15, height = 9)
+
+
+labels <- c("Wind support", "cross wind","Wind speed", "wave height", "air pressure")
+variables <- c("wind_support", "cross_wind", "wind_speed", "wh","airp")
+
+X11(width = 15, height = 9)
+par(mfrow= c(3,2), 
+    oma = c(2,0,3,0), 
+    las = 1)
+
+
+for(i in 1:length(variables)){
+  
+  boxplot(soarers[,variables[i]] ~ soarers[,"common_name"], data = soarers, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "",xaxt = "n")
+  
+  if(i == 1){
+    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+  }
+  boxplot(soarers[soarers$used == 1, variables[i]] ~ soarers[soarers$used == 1,"common_name"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(soarers[soarers$used == 1, "common_name"])) - 0.15)
+  
+  boxplot(soarers[soarers$used == 0, variables[i]] ~ soarers[soarers$used == 0, "common_name"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(soarers[soarers$used == 1 , "common_name"])) + 0.15)
+ 
+  axis(side = 1, at = 1:length(unique(soarers$common_name)), line = 0, labels = FALSE, 
+       tick = T , col.ticks = 1, col = NA, lty = NULL, tck = -.015)
+  
+   text(x = 1:length(unique(soarers$common_name))+0.18,
+       y = par("usr")[3],
+       labels = unique(soarers$common_name), xpd = NA, srt = 35, cex = 1, adj = 1.18)
+  
+}
+
+mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
+
+dev.off()
+
+pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_non_soarers.pdf", width = 15, height = 9)
+
+X11(width = 15, height = 9)
+par(mfrow= c(3,2), 
+    oma = c(2,0,3,0), 
+    las = 1)
+
+for(i in 1:length(variables)){
+  
+  boxplot(non_soarers[,variables[i]] ~ non_soarers[,"common_name"], data = non_soarers, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "",xaxt = "n")
+  
+  if(i == 1){
+    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+  }
+  boxplot(non_soarers[non_soarers$used == 1, variables[i]] ~ non_soarers[non_soarers$used == 1,"common_name"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(non_soarers[non_soarers$used == 1, "common_name"])) - 0.15)
+  
+  boxplot(non_soarers[non_soarers$used == 0, variables[i]] ~ non_soarers[non_soarers$used == 0, "common_name"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(non_soarers[non_soarers$used == 1 , "common_name"])) + 0.15)
+  
+  axis(side = 1, at = 1:length(unique(non_soarers$common_name)), line = 0, labels = FALSE, 
+       tick = T , col.ticks = 1, col = NA, lty = NULL, tck = -.015)
+  
+  text(x = 1:length(unique(non_soarers$common_name))+0.18,
+       y = par("usr")[3],
+       labels = unique(non_soarers$common_name), xpd = NA, srt = 35, cex = 1, adj = 1.2)
+  
+}
+
+mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
+
+dev.off()
