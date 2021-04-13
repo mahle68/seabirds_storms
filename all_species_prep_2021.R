@@ -134,33 +134,23 @@ data_df <- data_ls %>%
   ungroup()
 
 
-mf_40min <- data_df %>% 
-  filter(sci_name == "Fregata magnificens") %>% 
-  mutate(dt_40min = round_date(timestamp, "40 minutes")) 
+mf_1hour <- data_df %>% 
+  filter(sci_name == "Fregata magnificens") %>%
+  group_by(TripID, as.Date(timestamp), hour(timestamp)) %>% 
+  slice(1) %>% 
+  ungroup()
 
-nb_40min <- data_df %>% 
-  filter(sci_name == "Sula granti") %>% 
-  mutate(dt_40min = round_date(timestamp, "40 minutes")) 
-
-
-#remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_40min$TripID),timestamps = nb_40min$dt_40min,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-
-nb_40min <- nb_40min[-rows_to_delete,] 
-
-
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(mf_40min$TripID),timestamps = mf_40min$dt_40min,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-
-mf_40min <- mf_40min[-rows_to_delete,] 
-
+nb_1hour <- data_df %>% 
+  filter(sci_name == "Sula granti") %>%
+  group_by(TripID, as.Date(timestamp), hour(timestamp)) %>% 
+  slice(1) %>% 
+  ungroup()
 
 
 data_df <- data_df %>% 
   filter(!(sci_name %in% c("Sula granti", "Fregata magnificens"))) %>% 
-  full_join(nb_40min) %>% 
-  full_join(mf_40min)
+  full_join(nb_1hour) %>% 
+  full_join(mf_1hour)
 
 
 #make sure all track IDs are unique
@@ -170,7 +160,7 @@ data_df %>%
   filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
   
 
-save(data_df, file = "R_files/mv_incl_nbmf40min_rtt_df.RData")
+save(data_df, file = "R_files/mv_incl_nbmf1hr_rtt_df.RData")
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
@@ -232,7 +222,7 @@ save(gannets_15min, file = "R_files/gannets_15min.RData")
 # step 2: put everything together # ------------------------------------------
 
 #open data ####
-all_files <- list("R_files/mv_incl_nbmf25min_rtt_df.RData",
+all_files <- list("R_files/mv_incl_nbmf1hr_rtt_df.RData",
               "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata", #PR_data_split
               "R_files/gannets_15min.RData")
 
@@ -283,4 +273,4 @@ data_df_all <- data_ls_all %>%
   map(dplyr::select, cols) %>% 
   reduce(rbind)
 
-save(data_df_all, file = "R_files/all_spp_df_25min.RData")
+save(data_df_all, file = "R_files/all_spp_df_1hr.RData")

@@ -63,7 +63,7 @@ species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/d
 # ----------- Step 1: generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df_25min.RData") #data_df_all
+load("R_files/all_spp_df_1hr.RData") #data_df_all
 
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,
@@ -84,14 +84,15 @@ move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
 
 save(move_ls, file = "17_spp_move_ls.RData")
 save(move_ls, file = "17_spp_move_ls_25.RData")
-
+save(move_ls, file = "17_spp_move_ls_40.RData")
+save(move_ls, file = "17_spp_move_ls_1hr.RData")
 
 #### summary info
 
 lapply(move_ls, function(x) length(split(x)))
 
 ####
-load("17_spp_move_ls_25.RData")
+load("17_spp_move_ls_40.RData")
 
 #exclude nazca booby and mag frigatebird
 move_no_nb_mf <- move_ls[!(names(move_ls) %in% c("Sula granti","Fregata magnificens"))] 
@@ -495,3 +496,4 @@ for(i in 1:length(variables)){
 mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
 
 dev.off()
+  
