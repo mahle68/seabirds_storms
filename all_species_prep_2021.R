@@ -134,33 +134,33 @@ data_df <- data_ls %>%
   ungroup()
 
 
-mf_25min <- data_df %>% 
+mf_40min <- data_df %>% 
   filter(sci_name == "Fregata magnificens") %>% 
-  mutate(dt_25min = round_date(timestamp, "25 minutes")) 
+  mutate(dt_40min = round_date(timestamp, "40 minutes")) 
 
-nb_25min <- data_df %>% 
+nb_40min <- data_df %>% 
   filter(sci_name == "Sula granti") %>% 
-  mutate(dt_25min = round_date(timestamp, "25 minutes")) 
+  mutate(dt_40min = round_date(timestamp, "40 minutes")) 
 
 
 #remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_25min$TripID),timestamps = nb_25min$dt_25min,
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(nb_40min$TripID),timestamps = nb_40min$dt_40min,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-nb_25min <- nb_25min[-rows_to_delete,] 
+nb_40min <- nb_40min[-rows_to_delete,] 
 
 
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(mf_25min$TripID),timestamps = mf_25min$dt_25min,
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(mf_40min$TripID),timestamps = mf_40min$dt_40min,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-mf_25min <- mf_25min[-rows_to_delete,] 
+mf_40min <- mf_40min[-rows_to_delete,] 
 
 
 
 data_df <- data_df %>% 
   filter(!(sci_name %in% c("Sula granti", "Fregata magnificens"))) %>% 
-  full_join(nb_25min) %>% 
-  full_join(mf_25min)
+  full_join(nb_40min) %>% 
+  full_join(mf_40min)
 
 
 #make sure all track IDs are unique
@@ -170,7 +170,7 @@ data_df %>%
   filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
   
 
-save(data_df, file = "R_files/mv_incl_nbmf25min_rtt_df.RData")
+save(data_df, file = "R_files/mv_incl_nbmf40min_rtt_df.RData")
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
