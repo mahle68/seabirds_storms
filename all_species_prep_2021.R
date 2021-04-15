@@ -116,15 +116,27 @@ data_ls <- lapply(data_ls,function(x){
   
 })
 
-#common column names:
+#common column names
 cols <- Reduce(intersect, lapply(data_ls, colnames))
   
+colonies <- data.frame(study.name = c("Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)", "Frigatebirds breeding at Iguana Island, Panama", "Foraging ecology of masked boobies (Sula dactylatra) in the world’s largest “oceanic desert”",
+                                      "Nazca booby Sula granti Isla Espanola, Galapagos.", "Galapagos Albatrosses", "Red footed boobies (Weimerskirch)", "Great frigatebirds (Weimerskirch)", "Red-tailed tropicbirds (Phaethon rubricauda) Round Island",
+                                      "MPIAB PNIC hurricane frigate tracking"),
+                       colony.name = c("Fernando de Noronha", "Iguana Island", "Motu Nui", "Isla Espanola", "Isla Espanola", "Genovesa Island", "Genovesa Island", "Round Island", "Isla Contoy"),
+                       colony.lat = c(-3.86, 21.06, -27.2, -1.38, -1.38, 0.32, 0.32, -19.85, 21.50),
+                       colony.long = c(-32.42, -73.30, -109.4, -89.67, -89.67, -89.96, -89.96, 57.79, -86.79))
+
+# colonies <- data.frame(study.name = sapply(data_ls, "[", 1,"study.name")) %>% 
+#   remove_rownames() %>% 
+#   mutate(colony_name = c(""))
+
 
 data_df <- data_ls %>% 
   map(dplyr::select, cols) %>% 
   reduce(rbind) %>% 
   rename(sci_name = individual.taxon.canonical.name,
-         indID = individual.local.identifier) %>% 
+         indID = individual.local.identifier) %>%  
+  full_join(colonies, by = "study.name") %>% 
   mutate(sci_name = as.character(fct_recode(sci_name, 'Fregata magnificens' = "Fregata")),
          month = month(timestamp),
          year = year(timestamp),
