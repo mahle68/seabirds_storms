@@ -9,11 +9,11 @@ library(vegan)
 library(ape)
 library(tidyverse)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms")
+setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
 
 #annotated tracking data
 load("R_files/ssf_input_annotated_60_30_all.RData") # ann_50_all  from all_species_prep_2021.R
-species <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 winds <- ann_50_all %>% 
   filter(used == 1) %>% 

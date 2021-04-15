@@ -126,7 +126,15 @@ colonies <- data.frame(study.name = c("Foraging habitat of white-tailed tropicbi
                        colony.lat = c(-3.86, 21.06, -27.2, -1.38, -1.38, 0.32, 0.32, -19.85, 21.50),
                        colony.long = c(-32.42, -73.30, -109.4, -89.67, -89.67, -89.96, -89.96, 57.79, -86.79))
 
-# colonies <- data.frame(study.name = sapply(data_ls, "[", 1,"study.name")) %>% 
+
+#breeding periods for species tracked during both breeding and non-breeding season
+breeding <- data.frame(study.name = c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses"),
+                       breeding_start = c(3, 2, 3),
+                       breeding_end = c(8, 9, 12))
+
+# colonies <- data.frame(study.name = sapply(data_ls, "["
+
+#, 1,"study.name")) %>% 
 #   remove_rownames() %>% 
 #   mutate(colony_name = c(""))
 
@@ -145,24 +153,14 @@ data_df <- data_ls %>%
   mutate(TripID = paste(year, indID, as.character(TripID))) %>% 
   ungroup()
 
+#summarize how many tracks and individuals per study
 
-mf_1hour <- data_df %>% 
-  filter(sci_name == "Fregata magnificens") %>%
-  group_by(TripID, as.Date(timestamp), hour(timestamp)) %>% 
-  slice(1) %>% 
-  ungroup()
-
-nb_1hour <- data_df %>% 
-  filter(sci_name == "Sula granti") %>%
-  group_by(TripID, as.Date(timestamp), hour(timestamp)) %>% 
-  slice(1) %>% 
-  ungroup()
+data_df %>% 
+  group_by(study.name) %>% 
+  summarize(n_tracks = n_distinct(TripID),
+            n_ind = n_distinct(indID))
 
 
-data_df <- data_df %>% 
-  filter(!(sci_name %in% c("Sula granti", "Fregata magnificens"))) %>% 
-  full_join(nb_1hour) %>% 
-  full_join(mf_1hour)
 
 
 #make sure all track IDs are unique
@@ -172,7 +170,17 @@ data_df %>%
   filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
   
 
-save(data_df, file = "R_files/mv_incl_nbmf1hr_rtt_df.RData")
+save(data_df, file = "R_files/mv_all_w_colony.RData")
+
+
+#filter for breeding season: remove entire tracks that fall within the non-breeding period!!
+
+
+data_breeding <- data_df %>% 
+  filter(study.name == "Great frigatebirds (Weimerskirch)" & between(month, 3,8) | 
+           study.name == "Red footed boobies (Weimerskirch)" & between(month, 2,9) |
+           study.name == "Galapagos Albatrosses" & between(month, 3,12)|
+           !(study.name %in% c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses")))
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
