@@ -63,7 +63,7 @@ species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/d
 # ----------- Step 1: generate alternative steps ####
 
 #open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df_1hr.RData") #data_df_all
+load("R_files/all_spp_df.RData") #data_df_all
 
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,

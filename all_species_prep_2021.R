@@ -132,61 +132,64 @@ breeding <- data.frame(study.name = c("Great frigatebirds (Weimerskirch)", "Red 
                        breeding_start = c(3, 2, 3),
                        breeding_end = c(8, 9, 12))
 
-# colonies <- data.frame(study.name = sapply(data_ls, "["
-
-#, 1,"study.name")) %>% 
-#   remove_rownames() %>% 
-#   mutate(colony_name = c(""))
-
+#for nazca boobies and mag frigatebirds, sample randomly from the individuals
+nb_to_keep <- data_ls$`data/From_Sophie/final_list_track_split/NaBo_Galap_split.Rdata.NaBo_Galap_split` %>% 
+  distinct(individual.local.identifier) %>% 
+  sample_n(55)
+  
+  
+data_ls$`data/From_Sophie/final_list_track_split/NaBo_Galap_split.Rdata.NaBo_Galap_split` <- data_ls$`data/From_Sophie/final_list_track_split/NaBo_Galap_split.Rdata.NaBo_Galap_split` %>% 
+  filter(individual.local.identifier %in% nb_to_keep$individual.local.identifier)
+           
 
 data_df <- data_ls %>% 
   map(dplyr::select, cols) %>% 
   reduce(rbind) %>% 
-  rename(sci_name = individual.taxon.canonical.name,
-         indID = individual.local.identifier) %>%  
+  rename(sci_name = individual.taxon.canonical.name) %>%  
   full_join(colonies, by = "study.name") %>% 
   mutate(sci_name = as.character(fct_recode(sci_name, 'Fregata magnificens' = "Fregata")),
          month = month(timestamp),
          year = year(timestamp),
-         indID = as.character(indID)) %>% 
+         indID = as.character(paste(sci_name,individual.local.identifier, sep = "_"))) %>% 
   rowwise() %>% 
   mutate(TripID = paste(year, indID, as.character(TripID))) %>% 
   ungroup()
 
-#summarize how many tracks and individuals per study
-
-data_df %>% 
-  group_by(study.name) %>% 
-  summarize(n_tracks = n_distinct(TripID),
-            n_ind = n_distinct(indID))
-
-
-
-
-#make sure all track IDs are unique
-data_df %>% 
-  group_by(TripID) %>% 
-  summarise(n = n_distinct(indID)) %>%
-  filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
-  
-
-save(data_df, file = "R_files/mv_all_w_colony.RData")
-
-
 #filter for breeding season: remove entire tracks that fall within the non-breeding period!!
-
 
 data_breeding <- data_df %>% 
   filter(study.name == "Great frigatebirds (Weimerskirch)" & between(month, 3,8) | 
            study.name == "Red footed boobies (Weimerskirch)" & between(month, 2,9) |
            study.name == "Galapagos Albatrosses" & between(month, 3,12)|
            !(study.name %in% c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses")))
+#summarize how many tracks and individuals per study
+
+data_breeding %>% 
+  group_by(study.name) %>% 
+  summarize(n_tracks = n_distinct(TripID),
+            n_ind = n_distinct(indID))
+
+
+#make sure all track IDs are unique
+data_breeding %>% 
+  group_by(TripID) %>% 
+  summarise(n = n_distinct(indID)) %>%
+  filter(n > 1) #these are not unique. so, paste the ind name with the trip ID and year to make it unique
+  
+
+save(data_breeding, file = "R_files/mv_nbsample_w_colony.RData") #naza booby is a sample of 55 ind from the original 700 or whatever
+
 
 # Peter Ryan data prep ######
 #peter ryan data from Sophie
 
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
-#no prep needed
+PR_data_split <- PR_data_split %>% 
+  rename(colony.name = colony_name,
+         colony.lat = lat_colony,
+         colony.long = lon_colony)
+
+save(PR_data_split, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata")
 
 # Gremillet data prep ######
 cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv") %>% 
@@ -201,7 +204,10 @@ ng <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/D
 gannets <- cg %>% 
   full_join(ng) %>%
   rowwise() %>% 
-  mutate(timestamp = paste(DateGMT,TimeGMT, sep = " ")) %>% 
+  mutate(timestamp = paste(DateGMT,TimeGMT, sep = " "),
+                colony.name = ifelse(scientific_name == "Morus capensis", "Algoa Bay", "Ile Rouzic"),
+                colony.lat = ifelse(scientific_name == "Morus capensis", -33.5,48.9),
+                colony.long = ifelse(scientific_name == "Morus capensis", 25.5, -3.43)) %>% 
   ungroup() %>% 
   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
 
@@ -234,15 +240,33 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets_15
 
 gannets_15min <- gannets_15min[-rows_to_delete,] 
 
-
-
 save(gannets_15min, file = "R_files/gannets_15min.RData")
 
 
 # step 2: put everything together # ------------------------------------------
 
 #open data ####
-all_files <- list("R_files/mv_incl_nbmf1hr_rtt_df.RData",
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData") #waal; called waal
+
+RFB <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/RFBO_2012_ParamWind.csv", 
+                stringsAsFactors = F) %>% 
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
+
+waal_RFB <- waal %>% 
+  full_join(RFB) %>% 
+  mutate(sci_name = ifelse(Species == "WAAL", "Diomedea exulans", "Sula sula"),
+         colony.name = ifelse(Species == "WAAL", "Crozet Island", "Europa Island"),
+         colony.lat = ifelse(Species == "WAAL", -46.4,-22.3),
+         colony.long = ifelse(Species == "WAAL", 51.5, 40.3)) %>% 
+  rename(location.long = Longitude,
+         location.lat = Latitude,
+         indID = BirdID,
+         timestamp = date_time)
+
+sf <- st_as_sf(waal_RFB, coords = c("location.long", "location.lat"), crs = wgs)
+
+#open other files from earlier in this script
+all_files <- list("R_files/mv_nbsample_w_colony.RData",
               "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata", #PR_data_split
               "R_files/gannets_15min.RData")
 
@@ -291,6 +315,14 @@ cols <- Reduce(intersect, lapply(data_ls_all, colnames))
 
 data_df_all <- data_ls_all %>% 
   map(dplyr::select, cols) %>% 
-  reduce(rbind)
+  reduce(rbind) %>% 
+  full_join(waal_RFB[,cols])
 
-save(data_df_all, file = "R_files/all_spp_df_1hr.RData")
+save(data_df_all, file = "R_files/all_spp_df_colony_waal.RData")
+
+#get summary
+
+data_df_all %>% 
+  group_by(sci_name) %>% 
+  summarize(n_tracks = n_distinct(TripID),
+            n_ind = n_distinct(indID))
