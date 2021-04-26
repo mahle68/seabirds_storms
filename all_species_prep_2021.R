@@ -4,6 +4,8 @@
 #update: one minute is still causing errors. try rounding up to 15 min and then removing duplicated points
 #update: nazca booby and magnificient frigatebird are still problematic, so reduce to 25 min.
 
+#Qs: are the red footed boobies in Europa breeding?
+# are all wandering albatrosses breeding?
 
 library(tidyverse)
 library(lubridate)
@@ -70,6 +72,7 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 
+# step 1: data prep ######
 # Movebank data prep ######
 
 #red-tailed tropicbird
@@ -243,14 +246,14 @@ gannets_15min <- gannets_15min[-rows_to_delete,]
 save(gannets_15min, file = "R_files/gannets_15min.RData")
 
 
-# step 2: put everything together # ------------------------------------------
+# step 2: put everything together ######
 
-#open data ####
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData") #waal; called waal
+#open data #
+load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData") #waal; called waal
 
 RFB <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/RFBO_2012_ParamWind.csv", 
                 stringsAsFactors = F) %>% 
-  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) #red foote boobie breeding season in Europa: June-Oct. this data is for October and November...
 
 waal_RFB <- waal %>% 
   full_join(RFB) %>% 
@@ -263,7 +266,7 @@ waal_RFB <- waal %>%
          indID = BirdID,
          timestamp = date_time)
 
-sf <- st_as_sf(waal_RFB, coords = c("location.long", "location.lat"), crs = wgs)
+#sf <- st_as_sf(waal_RFB, coords = c("location.long", "location.lat"), crs = wgs)
 
 #open other files from earlier in this script
 all_files <- list("R_files/mv_nbsample_w_colony.RData",
@@ -307,7 +310,6 @@ data_ls_all <- lapply(data_ls_all,function(x){
 })
 
 
-
 #common column names:
 cols <- Reduce(intersect, lapply(data_ls_all, colnames))
 
@@ -326,3 +328,139 @@ data_df_all %>%
   group_by(sci_name) %>% 
   summarize(n_tracks = n_distinct(TripID),
             n_ind = n_distinct(indID))
+
+# step 3: 1_hourly subsample ######
+
+#and only keep the flying points.
+
+load("R_files/all_spp_df_colony_waal.RData") #data_df_all
+
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+data_df_all <- data_df_all[-rows_to_delete,] 
+
+#convert to move objects (i need to do this to calc speed for flyingsitting assignment)
+
+move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
+  x <- x %>%
+    arrange(TripID, timestamp) %>% 
+    as.data.frame()
+  mv <- move(x = x$location.long, y = x$location.lat, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
+  mv
+  
+})
+
+#time lag?
+
+move_ls_tl <- lapply(move_ls, function(x){
+  x$timeLag <-  unlist(lapply(timeLag(x, units="hours"),  c, NA))
+  x
+})
+
+lapply(move_ls_tl, function(x) mean(x$timeLag, na.rm = T))
+
+
+#add flying sitting
+mycl <- makeCluster(10) 
+clusterExport(mycl, c("move_ls")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(sf)
+  library(sp)
+  library(tidyverse)
+  library(move)
+})
+
+(b <- Sys.time())
+
+fl_sit_mv <- parLapply(mycl, move_ls, function(species){ #each species
+  
+  track_flsit <- lapply(split(species), function(track){
+    
+    #--STEP 1: drop points where the animal is not moving (i.e. sitting)
+    if("FlyingSitting" %in% colnames(track@idData)){ #if there is data fro flyingsitting, it ends up in the data, if not, it will be in iData
+      
+      track$speed_kmh <- c(NA, speed(track) * 3.6)
+      track$FlyingSitting <- ifelse(track$speed_kmh > 2, "flying", "sitting")
+      
+      #take flyingsitting out of the iData
+      track@idData <- track@idData[colnames(track@idData) != "FlyingSitting"]
+      # track
+    } else {
+      track$speed_kmh <- c(NA, speed(track) * 3.6)
+    }
+    
+    track
+  }) %>% 
+    reduce(rbind)
+  track_flsit
+  
+})
+
+Sys.time() - b
+
+stopCluster(mycl) 
+
+
+save(fl_sit_mv, file = "R_files/all_spp_sitting_flying.RData")
+
+  #   track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
+  #   
+  #   
+  #   track_th <- track_flying %>%
+  #     thinTrackTime(interval = as.difftime(hr, units='mins'),
+  #                   tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
+  #   #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
+  #   track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
+  #   track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
+  #   
+  #   if(nrow(track_th@data) == 1){
+  #     track_th@data$burst_id <- track_th$burst_id
+  #   } else {for(i in 2:nrow(track_th@data)){
+  #     
+  #     if(i== nrow(track_th@data)){
+  #       track_th@data$burst_id[i] <- NA
+  #     } else
+  #       if(track_th@data[i-1,"selected"] == "selected"){
+  #         track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]
+  #       } else {
+  #         track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"] + 1
+  #       }
+  #   }
+  #   }
+  #   #convert back to a move object (from move burst)
+  #   track_th <- as(track_th,"Move")
+  #   
+  #   #--STEP 3: calculate step lengths and turning angles 
+  #   #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
+  #   burst_ls <- split(track_th, track_th$burst_id)
+  #   burst_ls <- Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
+  #   
+  #   burst_ls <- lapply(burst_ls, function(burst){
+  #     burst$step_length <- c(distance(burst),NA) 
+  #     burst$turning_angle <- c(NA,turnAngleGc(burst),NA)
+  #     burst
+  #   })
+  #   
+  #   #put burst_ls into one dataframe
+  #   bursted_sp <- do.call(rbind, burst_ls)
+  #   
+  #   #reassign values
+  #   
+  #   if(length(bursted_sp) >= 1){
+  #     bursted_sp$sci_name<-track@idData$sci_name
+  #     bursted_sp$indID<-track@idData$indID
+  #     bursted_sp$TripID<-track@idData$TripID
+  #   }
+  #   
+  #   #bursted_sp$track<-track@idData$seg_id 
+  #   
+  #   bursted_sp
+  #   
+  # }) %>% 
+  #   Filter(function(x) length(x) > 1, .) #remove segments with no observation
+  # 
+  # #save the file
+  # save(sp_obj_ls, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/sub_sampled/",paste(species@idData$sci_name[1], hr, sep = "_"), ".RData"))
