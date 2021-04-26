@@ -62,14 +62,14 @@ species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/d
 
 # ----------- Step 1: generate alternative steps ####
 
-#open the data. this data is already subsampled to hourly
-load("R_files/all_spp_df.RData") #data_df_all
+#open the data. already has flyingsitting assignments
+load("R_files/all_spp_sitting_flying_df.RData") #all_spp
 
 #remove duplicated timestamps
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_df_all$TripID),timestamps = data_df_all$timestamp,
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(all_spp$TripID),timestamps = all_spp$timestamp,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 
-data_df_all <- data_df_all[-rows_to_delete,] 
+data_df_all <- all_spp[-rows_to_delete,] 
 
 #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
 
@@ -82,20 +82,45 @@ move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
   
 })
 
-save(move_ls, file = "17_spp_move_ls.RData")
-save(move_ls, file = "17_spp_move_ls_25.RData")
-save(move_ls, file = "17_spp_move_ls_40.RData")
-save(move_ls, file = "17_spp_move_ls_1hr.RData")
+save(move_ls, file = "18_spp_move_ls.RData")
+
 
 #### summary info
 
 lapply(move_ls, function(x) length(split(x)))
 
-####
-load("17_spp_move_ls_40.RData")
+#### the three species that are problematic, c("Sula granti","Fregata magnificens", "Diomedea exulans"), sub-sample manually to hourly. also reduce the number of individuals.
 
-#exclude nazca booby and mag frigatebird
-move_no_nb_mf <- move_ls[!(names(move_ls) %in% c("Sula granti","Fregata magnificens"))] 
+load("R_files/all_spp_sitting_flying_df.RData") #all_spp
+#make sure frigatebird is only in march and april: breeding season
+
+
+spp3 <- all_spp %>% 
+  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  filter(sci_name == "Fregata magnificens" & between(month(timestamp), 3,4)|
+           sci_name %in% c("Diomedea exulans", "Sula granti")) %>% 
+  group_by(sci_name, TripID, as.Date(timestamp), hour(timestamp)) %>% 
+  slice(1) %>% 
+  ungroup()
+
+#remove dublicates
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(spp3$TripID),timestamps = spp3$timestamp,
+                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+
+spp3 <- spp3[-rows_to_delete,] 
+
+#convert to move objects (i need to do this to calc speed for flyingsitting assignment)
+
+move_ls <- lapply(split(spp3,spp3$sci_name),function(x){
+  x <- x %>%
+    arrange(TripID, timestamp) %>% 
+    as.data.frame()
+  mv <- move(x = x$location.long, y = x$location.lat, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
+  mv
+  
+})
+
+save(move_ls, file = "3_spp_move_ls.RData")
 
 
 mycl <- makeCluster(10) 
@@ -120,18 +145,6 @@ parLapply(mycl, move_ls, function(species){ #each species
   sp_obj_ls <- lapply(split(species), function(track){
     
     #--STEP 1: drop points where the animal is not moving (i.e. sitting)
-    if("FlyingSitting" %in% colnames(track@idData)){ #if there is data fro flyingsitting, it ends up in the data, if not, it will be in iData
-      
-      track$speed_kmh <- c(NA, speed(track) * 3.6)
-      track$FlyingSitting <- ifelse(track$speed_kmh > 2, "flying", "sitting")
-      
-      #take flyingsitting out of the iData
-      track@idData <- track@idData[colnames(track@idData) != "FlyingSitting"]
-     # track
-    } else {
-      track$speed_kmh <- c(NA, speed(track) * 3.6)
-    }
-    
     track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
     
     
@@ -271,7 +284,7 @@ parLapply(mycl, move_ls, function(species){ #each species
   #used_av_track
   
   #save the file
-  save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/",species@idData$sci_name[1], ".RData"))
+      save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/",species@idData$sci_name[1], ".RData"))
   
 })
 
@@ -283,13 +296,13 @@ stopCluster(mycl)
 
 # ----------- Step 2: annotate#####
 
-files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/", full.names = T)
+files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/", full.names = T)[c(3,4,16)]
 
 used_av_ls_60_30 <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
-save(used_av_ls_60_30, file = "R_files/ssf_input_all_60_30_15spp.RData")
+save(used_av_ls_60_30, file = "R_files/ssf_input_all_60_30_3spp.RData")
 
-load("R_files/ssf_input_all_60_30_15spp.RData") #used_av_ls_60_30
+load("R_files/ssf_input_all_60_30_3spp.RData") #used_av_ls_60_30
 
 #create one dataframe with movebank specs
 used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
@@ -303,26 +316,24 @@ used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
 }) %>% 
   reduce(rbind)
 
-save(used_av_ls_60_30, file = "R_files/ssf_input_all_df_60_30_50_15spp.RData")
-
 #rename columns
-colnames(used_av_df_60_30)[c(14,15)] <- c("location-long","location-lat")
+colnames(used_av_df_60_30)[c(15,16)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_60_30, "R_files/ssf_input_df_60_30_50_15spp.csv")
+write.csv(used_av_df_60_30, "R_files/ssf_input_df_60_30_50_3spp.csv")
 
 
 #create 3 files
 df_1 <- used_av_df_60_30 %>% 
   slice(1:(nrow(used_av_df_60_30)/3))
-write.csv(df_1, "R_files/ssf_input_df_60_30_50_15spp_1.csv")
+write.csv(df_1, "R_files/ssf_input_df_60_30_50_3spp_1.csv")
 
 df_2 <- used_av_df_60_30 %>% 
   slice(((nrow(used_av_df_60_30)/3) + 1):((nrow(used_av_df_60_30)/3)*2))
-write.csv(df_2, "R_files/ssf_input_df_60_30_50_15spp_2.csv")
+write.csv(df_2, "R_files/ssf_input_df_60_30_50_3spp_2.csv")
 
 df_3 <- used_av_df_60_30 %>% 
   slice((((nrow(used_av_df_60_30)/3)*2) + 1):nrow(used_av_df_60_30))
-write.csv(df_3, "R_files/ssf_input_df_60_30_50_15spp_3.csv")
+write.csv(df_3, "R_files/ssf_input_df_60_30_50_3spp_3.csv")
 
 
 # # summary stats

@@ -131,9 +131,9 @@ colonies <- data.frame(study.name = c("Foraging habitat of white-tailed tropicbi
 
 
 #breeding periods for species tracked during both breeding and non-breeding season
-breeding <- data.frame(study.name = c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses"),
-                       breeding_start = c(3, 2, 3),
-                       breeding_end = c(8, 9, 12))
+breeding <- data.frame(study.name = c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses", "Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)"), #source for frigatebird, the other frigatebird study
+                       breeding_start = c(3, 2, 3, 3),
+                       breeding_end = c(8, 9, 12, 4))
 
 #for nazca boobies and mag frigatebirds, sample randomly from the individuals
 nb_to_keep <- data_ls$`data/From_Sophie/final_list_track_split/NaBo_Galap_split.Rdata.NaBo_Galap_split` %>% 
@@ -164,7 +164,9 @@ data_breeding <- data_df %>%
   filter(study.name == "Great frigatebirds (Weimerskirch)" & between(month, 3,8) | 
            study.name == "Red footed boobies (Weimerskirch)" & between(month, 2,9) |
            study.name == "Galapagos Albatrosses" & between(month, 3,12)|
-           !(study.name %in% c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses")))
+           study.name == "Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)" & between(month, 3,4)|
+           !(study.name %in% c("Great frigatebirds (Weimerskirch)", "Red footed boobies (Weimerskirch)", "Galapagos Albatrosses",
+                               "Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)")))
 #summarize how many tracks and individuals per study
 
 data_breeding %>% 
@@ -184,7 +186,7 @@ save(data_breeding, file = "R_files/mv_nbsample_w_colony.RData") #naza booby is 
 
 
 # Peter Ryan data prep ######
-#peter ryan data from Sophie
+#peter ryan data from Sophie. These are all breeding, I believe
 
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 PR_data_split <- PR_data_split %>% 
@@ -195,6 +197,7 @@ PR_data_split <- PR_data_split %>%
 save(PR_data_split, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata")
 
 # Gremillet data prep ######
+#all breeding (incubation and chick-rearing)
 cg <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/DavidGremillet_CapeGannet_AlgoaBay/CapeGannet-GPS-AlgoaBay-DavidGremillet-AllYears.csv") %>% 
   mutate(common_name = "Cape gannet",
          scientific_name = "Morus capensis")
@@ -329,7 +332,7 @@ data_df_all %>%
   summarize(n_tracks = n_distinct(TripID),
             n_ind = n_distinct(indID))
 
-# step 3: 1_hourly subsample ######
+# step 3: add flyingsitting to all ######
 
 #and only keep the flying points.
 
@@ -392,75 +395,44 @@ fl_sit_mv <- parLapply(mycl, move_ls, function(species){ #each species
       track$speed_kmh <- c(NA, speed(track) * 3.6)
     }
     
+    track$colony.name <- track@idData$colony.name
+    track$colony.lat <- track@idData$colony.lat
+    track$colony.long <- track@idData$colony.long
+    track$inID <- track@idData$indID
+    track$TripID <- track@idData$TripID
+    track$sci_name <- track@idData$sci_name
+    
     track
+    
   }) %>% 
     reduce(rbind)
   track_flsit
   
 })
 
-Sys.time() - b
+Sys.time() - b #1.7 min
 
 stopCluster(mycl) 
 
 
 save(fl_sit_mv, file = "R_files/all_spp_sitting_flying.RData")
 
-  #   track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
-  #   
-  #   
-  #   track_th <- track_flying %>%
-  #     thinTrackTime(interval = as.difftime(hr, units='mins'),
-  #                   tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
-  #   #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
-  #   track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-  #   track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
-  #   
-  #   if(nrow(track_th@data) == 1){
-  #     track_th@data$burst_id <- track_th$burst_id
-  #   } else {for(i in 2:nrow(track_th@data)){
-  #     
-  #     if(i== nrow(track_th@data)){
-  #       track_th@data$burst_id[i] <- NA
-  #     } else
-  #       if(track_th@data[i-1,"selected"] == "selected"){
-  #         track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]
-  #       } else {
-  #         track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"] + 1
-  #       }
-  #   }
-  #   }
-  #   #convert back to a move object (from move burst)
-  #   track_th <- as(track_th,"Move")
-  #   
-  #   #--STEP 3: calculate step lengths and turning angles 
-  #   #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-  #   burst_ls <- split(track_th, track_th$burst_id)
-  #   burst_ls <- Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
-  #   
-  #   burst_ls <- lapply(burst_ls, function(burst){
-  #     burst$step_length <- c(distance(burst),NA) 
-  #     burst$turning_angle <- c(NA,turnAngleGc(burst),NA)
-  #     burst
-  #   })
-  #   
-  #   #put burst_ls into one dataframe
-  #   bursted_sp <- do.call(rbind, burst_ls)
-  #   
-  #   #reassign values
-  #   
-  #   if(length(bursted_sp) >= 1){
-  #     bursted_sp$sci_name<-track@idData$sci_name
-  #     bursted_sp$indID<-track@idData$indID
-  #     bursted_sp$TripID<-track@idData$TripID
-  #   }
-  #   
-  #   #bursted_sp$track<-track@idData$seg_id 
-  #   
-  #   bursted_sp
-  #   
-  # }) %>% 
-  #   Filter(function(x) length(x) > 1, .) #remove segments with no observation
-  # 
-  # #save the file
-  # save(sp_obj_ls, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/sub_sampled/",paste(species@idData$sci_name[1], hr, sep = "_"), ".RData"))
+# step 3: prep for annotation ######
+
+all_spp <- fl_sit_mv %>%
+  reduce(rbind) %>% 
+  as.data.frame() %>% 
+  dplyr::select(-c("coords.x1", "coords.x2")) %>% 
+  mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) %>% 
+  as.data.frame()
+
+save(all_spp, file = "R_files/all_spp_sitting_flying_df.RData")
+
+colnames(all_spp)[c(2,3)] <- c("location-long","location-lat")
+
+spp1 <- all_spp[1:(nrow(all_spp)/2),]
+spp2 <- all_spp[((nrow(all_spp)/2) + 1): nrow(all_spp),]
+
+
+write.csv(spp1, "R_files/all_spp_annotation_1.csv")
+write.csv(spp2, "R_files/all_spp_annotation_2.csv")
