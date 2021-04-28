@@ -571,7 +571,7 @@ axis(side= 2, at= c(1:n_distinct(wspd_coeffs$species)), #line=-4.8,
      tck=-.015 , #tick marks smaller than default by this proportion
      las=2) # text perpendicular to axis label 
 
-#### alternatively, one model per species
+#### one model per species (consider Two step clogit to control for year and individual)
 
 f3 <- formula(used ~  wind_speed +
                 strata(stratum))
@@ -580,6 +580,108 @@ ms_wspd <- lapply(split(ann_all, ann_all$common_name),function(x){
   clogit(f3 , data = x)
 }
 )
+
+
+wspd <- lapply(ms_wspd, function(x){
+  data.frame(coef = summary(x)$coefficients[,1],
+             se = summary(x)$coefficients[,3],
+             p = summary(x)$coefficients[,5])
+}) %>% 
+  reduce(rbind) %>% 
+  mutate(species = names(ms_wspd),
+         lower = coef - se,
+         upper = coef + se) %>% 
+  mutate(sig = ifelse(p <= 0.05, "yes", "no"))
+
+
+#plot
+X11(width = 9, height = 5.5)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(3, 6.7, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspd$lower)-0.05,max(wspd$upper) + -0.05), 
+     ylim = c(1,19), xlab = "wind speed logit", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(wspd$coef, factor(wspd$species), col = "steelblue1", pch = 20, cex = 1.3)
+arrows(wspd$lower, c(1:n_distinct(wspd$species)),
+       wspd$upper, c(1:n_distinct(wspd$species)),
+       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+#add axes
+axis(side= 1, at= c(-4,-2,0,2), labels= c("-4","-2", "0", "2"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:n_distinct(wspd$species)), #line=-4.8, 
+     labels = levels(factor(wspd$species)),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+#wind support
+f4 <- formula(used ~  wind_support +
+                strata(stratum))
+
+ms_wspt <- lapply(split(ann_all, ann_all$common_name),function(x){
+  clogit(f4 , data = x)
+}
+)
+
+
+wspt <- lapply(ms_wspt, function(x){
+  data.frame(coef = summary(x)$coefficients[,1],
+             se = summary(x)$coefficients[,3],
+             p = summary(x)$coefficients[,5])
+}) %>% 
+  reduce(rbind) %>% 
+  mutate(species = names(ms_wspt),
+         lower = coef - se,
+         upper = coef + se) %>% 
+  mutate(sig = ifelse(p <= 0.05, "yes", "no"))
+
+
+#plot
+X11(width = 9, height = 5.5)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(3, 6.7, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspt$lower)-0.05,max(wspt$upper) + -0.05), 
+     ylim = c(1,18), xlab = "wind speed logit", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(wspt$coef, factor(wspt$species), col = "orange", pch = 20, cex = 1.3)
+arrows(wspt$lower, c(1:n_distinct(wspt$species)),
+       wspt$upper, c(1:n_distinct(wspt$species)),
+       col = "orange", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+#add axes
+axis(side= 1, at= c(-0.1,0,0.1), labels= c("-0.1", "0", "0.1"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:n_distinct(wspt$species)), #line=-4.8, 
+     labels = levels(factor(wspt$species)),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+
+
 
 
 # ----------- Step 5: INLA ####
