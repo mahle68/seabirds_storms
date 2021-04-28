@@ -7,6 +7,8 @@ library(lubridate)
 library(sf)
 library(parallel)
 library(move)
+library(corrr)
+library(INLA)
 
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -355,11 +357,11 @@ mapview(data_sf, zcol = "species")
 
 #after movebank
 
-files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/15spp", pattern = ".csv",recursive = T, full.names = T)
+files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/3spp", pattern = ".csv",recursive = T, full.names = T)
 
 ann <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
-  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>% 
+  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>% #remove points over land
   mutate(stratum = paste(TripID, burst_id, step_id, sep = "_"))
 
 # #extract startum IDs for those that have less than 20 alternative points over the sea
@@ -387,8 +389,8 @@ ann <- lapply(files_ls, read.csv, stringsAsFactors = F) %>%
 #   summarise(n = n()) %>% 
 #   filter(n < 21) # should be zero, and is! ;)
 
-ann_50_all <- ann %>%
-  filter(!(stratum %in% no_used$stratum)) %>% 
+ann_50_3 <- ann %>%
+  #filter(!(stratum %in% no_used$stratum)) %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
@@ -407,19 +409,30 @@ ann_50_all <- ann %>%
   #mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
   #                         ifelse(s_elev_angle > 40, "high", "low"))) %>% 
   as("Spatial") %>% 
-  as.data.frame()
+  as.data.frame() %>% 
+  mutate(common_name = ifelse(sci_name == "Diomedea exulans", "Wandering albatross",
+                              ifelse(sci_name == "Fregata magnificens", "Magnificent frigatebird", "Nazca booby")),
+         year = year(timestamp))
 
 
-save(ann_50_all, file = "R_files/ssf_input_annotated_60_30_all.RData")
+#append to the 15 species from before:
+load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+
+ann_all <- ann_50_all %>% 
+  full_join(ann_50_3)
+  
+
+save(ann_all, file = "R_files/ssf_input_annotated_60_30_18spp.RData")
 
 
 # ----------- Step 3: box plots ####
 
-load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
 
 #add common name
 ann_50_all <- ann_50_all %>% 
-  mutate(common_name = as.factor(sci_name))
+  mutate(common_name = as.factor(sci_name),
+         year = year(timestamp))
 
 
 levels(ann_50_all$common_name) <-  c("Great shearwater", "Tristan albatross", "Great frigatebird", "Northern gannet", "Cape gannet",
@@ -427,6 +440,9 @@ levels(ann_50_all$common_name) <-  c("Great shearwater", "Tristan albatross", "G
                                      "Atlantic petrel", "Soft-plumaged petrel", "masked booby", "Red-footed booby", "A. yellow-nosed albatross")
 
 ann_50_all$common_name <- as.character(ann_50_all$common_name)
+
+save(ann_50_all, file = "R_files/ssf_input_annotated_60_30_all.RData")
+
 #split the data into dynamic soarers and non dynamic soarers
 soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
 non_soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
@@ -508,3 +524,64 @@ mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
 
 dev.off()
   
+# ----------- Step 4: INLA ####
+
+load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+#all flying, all points over the sea, check later that all are adults.
+
+#correlation
+ann_50_all %>% 
+  dplyr::select(c("coords.x2", "wind_speed", "wind_support", "cross_wind", "abs_cross_wind")) %>% 
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r) > 0.6) #correlated: wind speed and abs(cross_wind)
+
+# #z-transform
+# all_data <- ann_50_all %>% 
+#   #group_by(species) 
+#   mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var"),
+#             #list(z = ~scale(.)))
+#             list(z = ~as.numeric(scale(.)))) %>%
+#   arrange(stratum, desc(used)) %>% 
+#   group_by(stratum) %>%  
+#   mutate(lat_at_used = head(zone,1)) %>%  #add a variable for latitudinal zone. This will assign the lat zone of the used point to the entire stratum
+#   ungroup() 
+
+#model
+mean.beta <- 0
+prec.beta <- 1e-4 
+
+formulaM1 <- used ~ -1 + wind_speed + wind_support +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+  f(year1, wind_speed, model = "iid", 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(year2, wind_support,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+
+(b <- Sys.time())
+
+lapply(split(ann_50_all, ann_50_all$common_name), function(x){
+  
+  x <- x %>% 
+    mutate(year1 = factor(year),
+           year2 = factor(year),
+           year3 = factor(year),
+           # ind1 = factor(indID),
+           # ind2 = factor(indID),
+           # ind3 = factor(indID),
+           stratum = factor(stratum))
+  
+M1 <- inla(formula = formulaM1, family ="Poisson",  
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           #control.inla = list(force.diagonal = T),
+           data = x,
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
+
+})
+
+Sys.time() - b #2.3 min
