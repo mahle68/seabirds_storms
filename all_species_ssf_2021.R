@@ -9,6 +9,7 @@ library(parallel)
 library(move)
 library(corrr)
 library(INLA)
+library(survival)
 
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -412,14 +413,18 @@ ann_50_3 <- ann %>%
   as.data.frame() %>% 
   mutate(common_name = ifelse(sci_name == "Diomedea exulans", "Wandering albatross",
                               ifelse(sci_name == "Fregata magnificens", "Magnificent frigatebird", "Nazca booby")),
-         year = year(timestamp))
+         year = year(timestamp)) %>% 
+  dplyr::select(-c("hour.timestamp.", "as.Date.timestamp."))
 
 
 #append to the 15 species from before:
 load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
 
 ann_all <- ann_50_all %>% 
-  full_join(ann_50_3)
+  full_join(ann_50_3) %>% 
+  dplyr::select(-c("location.long", "location.lat")) %>% 
+  rename(location.lat = coords.x2,
+         location.long = coords.x1)
   
 
 save(ann_all, file = "R_files/ssf_input_annotated_60_30_18spp.RData")
@@ -429,25 +434,9 @@ save(ann_all, file = "R_files/ssf_input_annotated_60_30_18spp.RData")
 
 load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
 
-#add common name
-ann_50_all <- ann_50_all %>% 
-  mutate(common_name = as.factor(sci_name),
-         year = year(timestamp))
-
-
-levels(ann_50_all$common_name) <-  c("Great shearwater", "Tristan albatross", "Great frigatebird", "Northern gannet", "Cape gannet",
-                                     "White-tailed tropicbird", "Red-tailed tropicbird", "Galapagos albatross", "Sooty albatross", "Grey petrel",
-                                     "Atlantic petrel", "Soft-plumaged petrel", "masked booby", "Red-footed booby", "A. yellow-nosed albatross")
-
-ann_50_all$common_name <- as.character(ann_50_all$common_name)
-
-save(ann_50_all, file = "R_files/ssf_input_annotated_60_30_all.RData")
-
 #split the data into dynamic soarers and non dynamic soarers
-soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
-non_soarers <- ann_50_all[ann_50_all$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
-
-
+soarers <- ann_all[ann_all$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
+non_soarers <- ann_all[ann_all$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
 
 pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers.pdf", width = 15, height = 9)
 
@@ -524,17 +513,85 @@ mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
 
 dev.off()
   
-# ----------- Step 4: INLA ####
+# ----------- Step 4: clogit ####
+load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
 
+f1 <- formula(used ~  wind_speed wind_support + common_name +
+                           strata(stratum))
+f2 <- formula(used ~  wind_speed * common_name + wind_support * common_name +
+                strata(stratum))
+m1 <- clogit(f1, data = ann_all)
+m2 <- clogit(f2, data = ann_all)
+
+#interpret the coefficients
+#https://it.unt.edu/interpreting-glm-coefficients
+
+wspd_coeffs <- data.frame(coef = summary(m2)$coefficients[,1],
+                                  se = summary(m2)$coefficients[,3]) %>% 
+  filter(str_detect(row.names(.), "wind_speed")) %>% 
+  mutate(species = c(levels(as.factor(ann_all$common_name))[1], row.names(.)[2:nrow(.)])) %>% 
+  mutate(across("species", str_replace, "wind_speed:common_name", ""))
+  
+wspd_coeffs$logit <- c(wspd_coeffs[1, "coef"],  wspd_coeffs[2:18, "coef"] + wspd_coeffs[1, "coef"])
+
+wspd_coeffs <- wspd_coeffs %>% 
+  rowwise() %>% 
+  mutate(upper = logit + se,
+         lower = logit - se)
+
+#plot
+X11(width = 9, height = 5.5)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(3, 6.7, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspd_coeffs$lower)-0.05,max(wspd_coeffs$upper) + -0.05), 
+     ylim = c(1,19), xlab = "wind speed logit", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(wspd_coeffs$logit, factor(wspd_coeffs$species), col = "steelblue1", pch = 20, cex = 1.3)
+arrows(wspd_coeffs$lower, c(1:n_distinct(wspd_coeffs$species)),
+       wspd_coeffs$upper, c(1:n_distinct(wspd_coeffs$species)),
+       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+#add axes
+axis(side= 1, at= c(-4,-2,0,2), labels= c("-4","-2", "0", "2"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:n_distinct(wspd_coeffs$species)), #line=-4.8, 
+     labels = levels(factor(wspd_coeffs$species)),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+#### alternatively, one model per species
+
+f3 <- formula(used ~  wind_speed +
+                strata(stratum))
+
+ms_wspd <- lapply(split(ann_all, ann_all$common_name),function(x){
+  clogit(f3 , data = x)
+}
+)
+
+
+# ----------- Step 5: INLA ####
 load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
 #all flying, all points over the sea, check later that all are adults.
 
 #correlation
-ann_50_all %>% 
-  dplyr::select(c("coords.x2", "wind_speed", "wind_support", "cross_wind", "abs_cross_wind")) %>% 
+ann_all %>% 
+  dplyr::select(c("location.lat", "wind_speed", "wind_support", "cross_wind", "abs_cross_wind")) %>% 
   correlate() %>% 
   stretch() %>% 
-  filter(abs(r) > 0.6) #correlated: wind speed and abs(cross_wind)
+  filter(abs(r) > 0.6) #correlated: none...wind speed and abs_cross_wind have a corr of 0.598
 
 # #z-transform
 # all_data <- ann_50_all %>% 
