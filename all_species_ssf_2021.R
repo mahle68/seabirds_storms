@@ -444,7 +444,8 @@ pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figur
 
 
 labels <- c("Wind support", "cross wind","Wind speed", "wave height", "air pressure")
-variables <- c("wind_support", "cross_wind", "wind_speed", "wh","airp")
+#variables <- c("wind_support", "cross_wind", "wind_speed", "wh","airp")
+variables <- c("wind_support", "cross_wind", "wind_speed")
 
 X11(width = 15, height = 9)
 par(mfrow= c(3,2), 
@@ -482,8 +483,8 @@ dev.off()
 
 pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_non_soarers.pdf", width = 15, height = 9)
 
-X11(width = 15, height = 9)
-par(mfrow= c(3,2), 
+X11(width = 7, height = 9)
+par(mfrow= c(3,1), 
     oma = c(2,0,3,0), 
     las = 1)
 
@@ -695,8 +696,6 @@ coefs <- data.frame(species = names(split(ann_all, ann_all$common_name)),
                     wind_speed_coef = NA,
                     wind_speed_se = NA)
 
-models <- vector("list", 18) 
-
 for(i in 1:length(split(ann_all, ann_all$common_name))){
   
   x <- split(ann_all, ann_all$common_name)[[i]]
@@ -723,15 +722,93 @@ for(i in 1:length(split(ann_all, ann_all$common_name))){
     coefs[i,"wind_speed_se"] <- summary(m)$coefficients[2,3]
   }
   
-  models[i] <- m
+ # models[i] <- m
 }
 
-save(models, file = "R_files/two_step_models.RData")
 
-#extract coeffs and se
-coefs <- lapply(models, function(x){
-  
-})
+coefs <- coefs %>% 
+  rowwise() %>% 
+  mutate(upper_wsd = wind_speed_coef + wind_speed_se,
+         lower_wsd = wind_speed_coef - wind_speed_se,
+         upper_wst = wind_support_coef + wind_support_se,
+         lower_wst = wind_support_coef - wind_support_se)
+
+save(coefs, file = "R_files/two_step_coefs.RData")
+#save(models, file = "R_files/two_step_models.RData")
+
+#get rid of white-tailed tropicbird... the range of values is bizarre
+coefs <- coefs[-18,]
+
+
+#plot
+X11(width = 9, height = 5.5)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(3, 6.7, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(coefs$lower_wsd)-0.05,max(coefs$upper_wsd) + -0.05), 
+     ylim = c(1,19), xlab = "wind speed coef", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(coefs$wind_speed_coef, factor(coefs$species), col = "steelblue1", pch = 20, cex = 1.3)
+arrows(coefs$lower_wsd, c(1:n_distinct(coefs$species)),
+       coefs$upper_wsd, c(1:n_distinct(coefs$species)),
+       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+#add axes
+axis(side= 1, at= c(-4,-2,0,2, 4), labels= c("-4","-2", "0", "2", "4"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:n_distinct(coefs$species)), #line=-4.8, 
+     labels = levels(factor(coefs$species)),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+
+
+jpeg("/home/enourani/ownCloud/Work/conferences/seabirds_2021/windspt_coefs.jpg", width = 6, height = 3.5, units = "in", res = 500)
+
+#plot wind support
+X11(width = 6, height = 3.5)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(4.5, 6.7, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-1,1), 
+     ylim = c(1,18), xlab = "Wind support coefficients", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(coefs$wind_support_coef, factor(coefs$species), col = "steelblue1", pch = 20, cex = 2.5)
+arrows(coefs$lower_wst, c(1:n_distinct(coefs$species)),
+       coefs$upper_wst, c(1:n_distinct(coefs$species)),
+       col = "steelblue1", code = 3, length = 0.03, angle = 90, lwd = 2) #angle of 90 to make the arrow head as straight as a line
+#add axes
+axis(side= 1, at= c(-0.5,0,0.5), labels= c("-0.5", "0", "0.5"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:n_distinct(coefs$species)), #line=-4.8, 
+     labels = levels(factor(coefs$species)),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+dev.off()
 
 #all species at once
 M1 <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster(common_name),
@@ -740,7 +817,6 @@ M1 <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster
          D="UN(1)") #D is the structure of the output matrix
 
 save(M1, file = "R_files/two_step_one_model.RData")
-
 
 # ----------- Step 6: INLA ####
 load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
