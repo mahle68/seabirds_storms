@@ -1,6 +1,7 @@
 #script for generating random steps and running ssf for seabird data
 #follows up from all_species_prep_2021.R
 #Elham Nourani. Radofzell, DE. April 8. 2021
+#clogit z transofmation didn't change things.
 
 library(tidyverse)
 library(lubridate)
@@ -10,6 +11,7 @@ library(move)
 library(corrr)
 library(INLA)
 library(survival)
+library(TwoStepCLogit)
 
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -660,8 +662,8 @@ par(mfrow=c(1,1), bty="n", #no box around the plot
     bty = "l"
 )
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspt$lower)-0.05,max(wspt$upper) + -0.05), 
-     ylim = c(1,18), xlab = "wind speed logit", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspt$lower)-0.05,max(wspt$upper) + 0.05), 
+     ylim = c(1,19), xlab = "wind speed logit", ylab = "")
 
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
@@ -680,70 +682,68 @@ axis(side= 2, at= c(1:n_distinct(wspt$species)), #line=-4.8,
      tck=-.015 , #tick marks smaller than default by this proportion
      las=2) # text perpendicular to axis label 
 
-#### one model per species (z-transformed vars)
 
-all_data <- ann_all %>%
-  mutate_at(c("wind_speed", "wind_support", "abs_cross_wind"),
-            list(z = ~as.numeric(scale(.))))
+# ----------- Step 5: two step clogit ####
 
-#wind speed
-f5 <- formula(used ~  wind_speed_z +
-                strata(stratum))
+load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
+load("R_files/input_for_smooth_inla.RData") #ann_all with z-transformation
 
-ms_wspd <- lapply(split(all_data, all_data$common_name),function(x){
-  clogit(f5 , data = x)
+#empty data frame for coeffs and standard errors
+coefs <- data.frame(species = names(split(ann_all, ann_all$common_name)),
+                    wind_support_coef = NA,
+                    wind_support_se = NA,
+                    wind_speed_coef = NA,
+                    wind_speed_se = NA)
+
+models <- vector("list", 18) 
+
+for(i in 1:length(split(ann_all, ann_all$common_name))){
+  
+  x <- split(ann_all, ann_all$common_name)[[i]]
+    
+  if(length(unique(x$year)) > 1){
+    m <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster(year),
+             random = ~ wind_support_z + wind_speed_z, 
+             data = x, 
+             D="UN(1)") #D is the structure of the output matrix
+    
+    coefs[i,"wind_support_coef"] <- m$beta[1]
+    coefs[i,"wind_speed_coef"] <- m$beta[2]
+    
+    coefs[i,"wind_support_se"] <- m$se[1]
+    coefs[i,"wind_speed_se"] <- m$se[2]
+      
+  } else {
+    m <- clogit(used ~ wind_support_z + wind_speed_z +  strata(stratum), data = x)
+    
+    coefs[i,"wind_support_coef"] <- m$coefficients[1]
+    coefs[i,"wind_speed_coef"] <- m$coefficients[2]
+    
+    coefs[i,"wind_support_se"] <- summary(m)$coefficients[1,3]
+    coefs[i,"wind_speed_se"] <- summary(m)$coefficients[2,3]
+  }
+  
+  models[i] <- m
 }
-)
+
+save(models, file = "R_files/two_step_models.RData")
+
+#extract coeffs and se
+coefs <- lapply(models, function(x){
+  
+})
+
+#all species at once
+M1 <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster(common_name),
+         random = ~ wind_support_z + wind_speed_z, 
+         data = ann_all, 
+         D="UN(1)") #D is the structure of the output matrix
+
+save(M1, file = "R_files/two_step_one_model.RData")
 
 
-wspd <- lapply(ms_wspd, function(x){
-  data.frame(coef = summary(x)$coefficients[,1],
-             se = summary(x)$coefficients[,3],
-             p = summary(x)$coefficients[,5])
-}) %>% 
-  reduce(rbind) %>% 
-  mutate(species = names(ms_wspd),
-         lower = coef - se,
-         upper = coef + se) %>% 
-  mutate(sig = ifelse(p <= 0.05, "yes", "no"))
-
-
-#plot
-X11(width = 9, height = 5.5)
-par(mfrow=c(1,1), bty="n", #no box around the plot
-    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    #font.axis= 0.75, #3: axis labels are in italics
-    #cex.lab = 0.75,
-    cex = 0.7,
-    oma = c(0,3.7,0,0),
-    mar = c(3, 6.7, 0.5, 1),
-    bty = "l"
-)
-
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(min(wspd$lower)-0.05,max(wspd$upper) + -0.05), 
-     ylim = c(1,19), xlab = "wind speed logit", ylab = "")
-
-#add vertical line for zero
-abline(v = 0, col = "grey30",lty = 2)
-#add points and error bars
-points(wspd$coef, factor(wspd$species), col = "steelblue1", pch = 20, cex = 1.3)
-arrows(wspd$lower, c(1:n_distinct(wspd$species)),
-       wspd$upper, c(1:n_distinct(wspd$species)),
-       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
-#add axes
-axis(side= 1, at= c(-4,-2,0,2), labels= c("-4","-2", "0", "2"), 
-     tick=T ,col = NA, col.ticks = 1, tck=-.015)
-
-axis(side= 2, at= c(1:n_distinct(wspd$species)), #line=-4.8, 
-     labels = levels(factor(wspd$species)),
-     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck=-.015 , #tick marks smaller than default by this proportion
-     las=2) # text perpendicular to axis label 
-
-
-
-# ----------- Step 5: INLA ####
-load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+# ----------- Step 6: INLA ####
+load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
 #all flying, all points over the sea, check later that all are adults.
 
 #correlation
@@ -768,7 +768,7 @@ ann_all %>%
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-formulaM1 <- used ~ -1 + wind_speed + wind_support +
+formulaM1 <- used ~ -1 + wind_speed_z + wind_support_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(year1, wind_speed, model = "iid", 
@@ -779,7 +779,7 @@ formulaM1 <- used ~ -1 + wind_speed + wind_support +
 
 (b <- Sys.time())
 
-lapply(split(ann_50_all, ann_50_all$common_name), function(x){
+lapply(split(ann_all, ann_all$common_name), function(x){
   
   x <- x %>% 
     mutate(year1 = factor(year),
@@ -802,3 +802,54 @@ M1 <- inla(formula = formulaM1, family ="Poisson",
 })
 
 Sys.time() - b #2.3 min
+
+
+## all species at once
+
+ann_all <- ann_all %>% 
+  mutate(species1 = factor(common_name),
+         species2 = factor(common_name),
+         species3 = factor(common_name),
+         stratum = factor(stratum)) %>% 
+  mutate_at(c("wind_speed", "wind_support"),
+            list(z = ~as.numeric(scale(.)))) %>% 
+  mutate_at(c("wind_speed","wind_support"),
+            list(group = ~inla.group(.,n = 50, method = "cut"))) %>%
+  as.data.frame()
+
+save(ann_all, file = "R_files/input_for_smooth_inla.RData")
+
+formulaM2 <- used ~ -1 + wind_speed + wind_support +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+f(species1, wind_speed, model = "iid", 
+  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+f(species2, wind_support,  model = "iid",
+  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+formulaM3 <- used ~ -1 + species1 +
+  f(wind_support_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+
+M2 <- inla(formula = formulaM2, family ="Poisson",  
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           control.inla = list(force.diagonal = T),
+           data = ann_all,
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
+
+(b <- Sys.time())
+M3 <- inla(formulaM3, family ="Poisson", 
+          control.fixed = list(
+            mean = mean.beta,
+            prec = list(default = prec.beta)),
+          data = ann_all,
+          num.threads = 10,
+          control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
+          #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
+          control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b 

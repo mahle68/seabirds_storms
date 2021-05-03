@@ -1,28 +1,53 @@
 #PCoA analysis for seabirds
 # Apr 13. 2021. Radolfzell, DE.
 #Elham Nourani, PhD.
-#starting here: https://archetypalecology.wordpress.com/2018/02/19/principal-coordinates-analysis-pcoa-in-r/
-#:~:text=Principal%20coordinates%20analysis%20(PCoA%3B%20also,dis)similarity%20matrix%20as%20input.
+#starting here: https://archetypalecology.wordpress.com/2018/02/19/principal-coordinates-analysis-pcoa-in-r/:~:text=Principal%20coordinates%20analysis%20(PCoA%3B%20also,dis)similarity%20matrix%20as%20input.
 #and https://ourcodingclub.github.io/tutorials/ordination/
 
 library(vegan)
 library(ape)
 library(tidyverse)
 
-setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
+setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms")
 
-#annotated tracking data
-load("R_files/ssf_input_annotated_60_30_all.RData") # ann_50_all  from all_species_prep_2021.R
+rsd <- function(x){
+  cv <- sd(x, na.rm = T)/abs(mean(x, na.rm = T))
+  rsd <- cv*100
+  return(rsd)
+}
+
+#annotated tracking data (one hourly sub-sample; flying only; breeding only (as far as I know); adults only (as far as I know :/ ))
+files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
+
+pca_input <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>%   #remove points over land
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+         v10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.,
+         wh = ECMWF.ERA5.SL.Significant.Wave.Height,
+         airp = ECMWF.ERA5.SL.Mean.Sea.Level.Pressure) %>%
+  mutate(delta_t = sst - t2m,
+         wind_speed_ms = sqrt(u10m^2 + v10m^2),
+         wind_speed_kmh = sqrt(u10m^2 + v10m^2) * 3.6)
+
+save(pca_input, file = "R_files/pcoa_input_18spp.RData")
+
+
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
-winds <- ann_50_all %>% 
-  filter(used == 1) %>% 
-  group_by(sci_name) %>% 
-  summarise(max_wind = max(wind_speed),
-            min_wind = min(wind_speed),
-            var_wind = var(wind_speed))
+winds <- pca_input %>% 
+  group_by(sci_name) %>% #make sure plyr is detached
+  summarise(max_wind = max(wind_speed_kmh),
+            min_wind = min(wind_speed_kmh),
+            rsd_wind = rsd(wind_speed_kmh),
+            quant_95 = quantile(wind_speed_kmh, probs = 0.95),
+            colony.lat = head(colony.lat,1),
+            colony.long = head(colony.long,1))
 
-data <- species[species$scientific.name %in% unique(ann_50_all$sci_name),] %>% 
+data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>% 
   dplyr::select(c(1:5)) %>%
   separate(wing.span, c("min_wspn","max_wspn")) %>% 
   separate(body.mass, c("min_mass","max_mass")) %>% 
@@ -35,6 +60,7 @@ data <- species[species$scientific.name %in% unique(ann_50_all$sci_name),] %>%
   column_to_rownames("species") %>% 
   dplyr::select(-c("scientific.name","min_wspn","max_wspn","min_mass","max_mass"))
 
+save(data, file = "R_files/pcoa_18spp.RData")
 
 
 #try pca (only numeric variables)
@@ -88,3 +114,16 @@ biplot.pcoa(PCOA)
 #However, we could work around this problem like this:
 biplot.pcoa(PCOA, data[,-1])
 
+
+##pca in datacamp
+#https://www.datacamp.com/community/tutorials/pca-analysis-r
+
+library(ggbiplot)
+
+pca_out <- prcomp(data[,-c(1,5,7)], center = T, scale. = T)
+
+summary(pca_out)
+
+ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = T) +
+  theme_minimal()+
+  theme(legend.position = "bottom")
