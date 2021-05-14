@@ -63,12 +63,15 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
-species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+species <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 # ----------- Step 1: generate alternative steps ####
 
 #open the data. already has flyingsitting assignments
 load("R_files/all_spp_sitting_flying_df.RData") #all_spp
+
+all_spp$timestamp <- as.POSIXct(strptime(all_spp$timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")
+all_spp$year <- year(all_spp$timestamp)
 
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(all_spp$TripID),timestamps = all_spp$timestamp,
@@ -76,9 +79,21 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(all_spp$Tr
 
 data_df_all <- all_spp[-rows_to_delete,] 
 
+
+#summary info
+
+all_spp %>% 
+  group_by(sci_name) %>% 
+  summarize(n_tracks = n_distinct(TripID),
+            n_ind = n_distinct(inID),
+            n_yr = n_distinct(year),
+            min_yr = min(year),
+            max_yr = max(year))
+
+
 #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
 
-move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
+move_ls <- lapply(split(all_spp,all_spp$sci_name),function(x){
   x <- x %>%
     arrange(TripID, timestamp) %>% 
     as.data.frame()
@@ -358,42 +373,18 @@ data_sf <- used_av_df_60_30 %>%
 mapview(data_sf, zcol = "species")
 
 
-#after movebank
+#put all annotated data together
+#load 15 species
+load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
 
+#load 3 species
 files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/3spp", pattern = ".csv",recursive = T, full.names = T)
 
-ann <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
+#append all species
+ann_18 <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
   drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>% #remove points over land
-  mutate(stratum = paste(TripID, burst_id, step_id, sep = "_"))
-
-# #extract startum IDs for those that have less than 20 alternative points over the sea
-# less_than_20 <- ann %>% 
-#   filter(used == 0) %>% 
-#   group_by(stratum) %>% 
-#   summarise(n = n()) %>% 
-#   filter(n < 20) #all are EF from Spain. It doesnt hurt to have less of that 
-# 
-# # retain 20 alternative steps per stratum
-# used <- ann %>% 
-#   filter(!(stratum %in% less_than_20$stratum)) %>% 
-#   filter(used == 1)
-# 
-# used_avail_20 <- ann %>% 
-#   filter(!(stratum %in% less_than_20$stratum)) %>% 
-#   filter(used == 0) %>% 
-#   group_by(stratum) %>% 
-#   sample_n(20, replace = F) %>% 
-#   ungroup() %>% 
-#   full_join(used) #append the used levels
-# 
-# #make sure all strata have 51 points
-# no_used <- used_avail_20 %>% 
-#   summarise(n = n()) %>% 
-#   filter(n < 21) # should be zero, and is! ;)
-
-ann_50_3 <- ann %>%
-  #filter(!(stratum %in% no_used$stratum)) %>% 
+  mutate(stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
@@ -406,41 +397,66 @@ ann_50_3 <- ann %>%
          wind_support= wind_support(u = u10m,v = v10m, heading = heading),
          cross_wind= cross_wind(u = u10m, v = v10m,heading = heading),
          wind_speed = sqrt(u10m^2 + v10m^2),
-         abs_cross_wind = abs(cross_wind(u = u10m, v = v10m, heading = heading))) %>% 
-  st_as_sf(coords = c("location.long.1", "location.lat.1"), crs = wgs) %>% 
-  #mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
-  #mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
-  #                         ifelse(s_elev_angle > 40, "high", "low"))) %>% 
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  mutate(common_name = ifelse(sci_name == "Diomedea exulans", "Wandering albatross",
+         abs_cross_wind = abs(cross_wind(u = u10m, v = v10m, heading = heading)),
+         common_name = ifelse(sci_name == "Diomedea exulans", "Wandering albatross",
                               ifelse(sci_name == "Fregata magnificens", "Magnificent frigatebird", "Nazca booby")),
          year = year(timestamp)) %>% 
-  dplyr::select(-c("hour.timestamp.", "as.Date.timestamp."))
-
-
-#append to the 15 species from before:
-load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
-
-ann_all <- ann_50_all %>% 
-  full_join(ann_50_3) %>% 
+  dplyr::select(-c("hour.timestamp.", "as.Date.timestamp.")) %>% 
+  full_join(ann_50_all) %>% 
   dplyr::select(-c("location.long", "location.lat")) %>% 
   rename(location.lat = coords.x2,
          location.long = coords.x1)
-  
 
-save(ann_all, file = "R_files/ssf_input_annotated_60_30_18spp.RData")
+
+#extract startum IDs for those that have less than 40 alternative points over the sea
+less_than_40 <- ann_18 %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n < 40) 
+
+# retain 20 alternative steps per stratum
+used <- ann_18 %>% 
+  filter(!(stratum %in% less_than_40$stratum)) %>% 
+  filter(used == 1)
+
+used_avail_40 <- ann_18 %>% 
+  filter(!(stratum %in% less_than_40$stratum)) %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  sample_n(40, replace = F) %>% 
+  ungroup() %>% 
+  full_join(used) #append the used levels
+ 
+#make sure all strata have 41 points
+no_used <- used_avail_40 %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n < 41) 
+
+ann_40 <- used_avail_40 %>%
+  filter(!(stratum %in% no_used$stratum))
+  
+#do we have 41 rows per stratum?
+ann_40 %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n != 41) 
+
+
+save(ann_40, file = "R_files/ssf_input_annotated_60_30_40alt_18spp.RData")
 
 
 # ----------- Step 3: box plots ####
 
-load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
+load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
 
+ann_40 <- as.data.frame(ann_40)
 #split the data into dynamic soarers and non dynamic soarers
-soarers <- ann_all[ann_all$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
-non_soarers <- ann_all[ann_all$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
+soarers <- ann_40[ann_40$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
+non_soarers <- ann_40[ann_40$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
 
-pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers.pdf", width = 15, height = 9)
+pdf("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers_40_1hr.pdf", width = 15, height = 9)
 
 
 labels <- c("Wind support", "cross wind","Wind speed", "wave height", "air pressure")
@@ -448,7 +464,7 @@ labels <- c("Wind support", "cross wind","Wind speed", "wave height", "air press
 variables <- c("wind_support", "cross_wind", "wind_speed")
 
 X11(width = 15, height = 9)
-par(mfrow= c(3,2), 
+par(mfrow= c(3,1), 
     oma = c(2,0,3,0), 
     las = 1)
 
@@ -481,7 +497,7 @@ mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
 
 dev.off()
 
-pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_non_soarers.pdf", width = 15, height = 9)
+pdf("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_non_soarers_40_1hr.pdf", width = 15, height = 9)
 
 X11(width = 7, height = 9)
 par(mfrow= c(3,1), 
@@ -517,14 +533,14 @@ mtext("Instantaneous values at each step 1hr", side = 3, outer = T, cex = 1.3)
 dev.off()
   
 # ----------- Step 4: clogit ####
-load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
+load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
 
-f1 <- formula(used ~  wind_speed wind_support + common_name +
+f1 <- formula(used ~  wind_speed + wind_support + common_name +
                            strata(stratum))
 f2 <- formula(used ~  wind_speed * common_name + wind_support * common_name +
                 strata(stratum))
-m1 <- clogit(f1, data = ann_all)
-m2 <- clogit(f2, data = ann_all)
+m1 <- clogit(f1, data = ann_40)
+m2 <- clogit(f2, data = ann_40)
 
 #interpret the coefficients
 #https://it.unt.edu/interpreting-glm-coefficients
@@ -532,7 +548,7 @@ m2 <- clogit(f2, data = ann_all)
 wspd_coeffs <- data.frame(coef = summary(m2)$coefficients[,1],
                                   se = summary(m2)$coefficients[,3]) %>% 
   filter(str_detect(row.names(.), "wind_speed")) %>% 
-  mutate(species = c(levels(as.factor(ann_all$common_name))[1], row.names(.)[2:nrow(.)])) %>% 
+  mutate(species = c(levels(as.factor(ann_40$common_name))[1], row.names(.)[2:nrow(.)])) %>% 
   mutate(across("species", str_replace, "wind_speed:common_name", ""))
   
 wspd_coeffs$logit <- c(wspd_coeffs[1, "coef"],  wspd_coeffs[2:18, "coef"] + wspd_coeffs[1, "coef"])
@@ -579,7 +595,7 @@ axis(side= 2, at= c(1:n_distinct(wspd_coeffs$species)), #line=-4.8,
 f3 <- formula(used ~  wind_speed +
                 strata(stratum))
 
-ms_wspd <- lapply(split(ann_all, ann_all$common_name),function(x){
+ms_wspd <- lapply(split(ann_40, ann_40$common_name),function(x){
   clogit(f3 , data = x)
 }
 )
@@ -633,7 +649,7 @@ axis(side= 2, at= c(1:n_distinct(wspd$species)), #line=-4.8,
 f4 <- formula(used ~  wind_support +
                 strata(stratum))
 
-ms_wspt <- lapply(split(ann_all, ann_all$common_name),function(x){
+ms_wspt <- lapply(split(ann_40, ann_40$common_name),function(x){
   clogit(f4 , data = x)
 }
 )
@@ -686,19 +702,19 @@ axis(side= 2, at= c(1:n_distinct(wspt$species)), #line=-4.8,
 
 # ----------- Step 5: two step clogit ####
 
-load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
-load("R_files/input_for_smooth_inla.RData") #ann_all with z-transformation
+load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
+load("R_files/input_for_smooth_inla.RData") #ann_40 with z-transformation
 
 #empty data frame for coeffs and standard errors
-coefs <- data.frame(species = names(split(ann_all, ann_all$common_name)),
+coefs <- data.frame(species = names(split(ann_40, ann_40$common_name)),
                     wind_support_coef = NA,
                     wind_support_se = NA,
                     wind_speed_coef = NA,
                     wind_speed_se = NA)
 
-for(i in 1:length(split(ann_all, ann_all$common_name))){
+for(i in 1:length(split(ann_40, ann_40$common_name))){
   
-  x <- split(ann_all, ann_all$common_name)[[i]]
+  x <- split(ann_40, ann_40$common_name)[[i]]
     
   if(length(unique(x$year)) > 1){
     m <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster(year),
@@ -813,17 +829,17 @@ dev.off()
 #all species at once
 M1 <- Ts.estim(used ~ wind_support_z + wind_speed_z +  strata(stratum) + cluster(common_name),
          random = ~ wind_support_z + wind_speed_z, 
-         data = ann_all, 
+         data = ann_40, 
          D="UN(1)") #D is the structure of the output matrix
 
 save(M1, file = "R_files/two_step_one_model.RData")
 
 # ----------- Step 6: INLA ####
-load("R_files/ssf_input_annotated_60_30_18spp.RData") #ann_all
+load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
 #all flying, all points over the sea, check later that all are adults.
 
 #correlation
-ann_all %>% 
+ann_40 %>% 
   dplyr::select(c("location.lat", "wind_speed", "wind_support", "cross_wind", "abs_cross_wind")) %>% 
   correlate() %>% 
   stretch() %>% 
@@ -855,7 +871,7 @@ formulaM1 <- used ~ -1 + wind_speed_z + wind_support_z +
 
 (b <- Sys.time())
 
-lapply(split(ann_all, ann_all$common_name), function(x){
+lapply(split(ann_40, ann_40$common_name), function(x){
   
   x <- x %>% 
     mutate(year1 = factor(year),
@@ -882,7 +898,7 @@ Sys.time() - b #2.3 min
 
 ## all species at once
 
-ann_all <- ann_all %>% 
+ann_40 <- ann_40 %>% 
   mutate(species1 = factor(common_name),
          species2 = factor(common_name),
          species3 = factor(common_name),
@@ -893,7 +909,7 @@ ann_all <- ann_all %>%
             list(group = ~inla.group(.,n = 50, method = "cut"))) %>%
   as.data.frame()
 
-save(ann_all, file = "R_files/input_for_smooth_inla.RData")
+save(ann_40, file = "R_files/input_for_smooth_inla.RData")
 
 formulaM2 <- used ~ -1 + wind_speed + wind_support +
   f(stratum, model = "iid", 
@@ -914,7 +930,7 @@ M2 <- inla(formula = formulaM2, family ="Poisson",
              mean = mean.beta,
              prec = list(default = prec.beta)),
            control.inla = list(force.diagonal = T),
-           data = ann_all,
+           data = ann_40,
            num.threads = 10,
            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
 
@@ -923,7 +939,7 @@ M3 <- inla(formulaM3, family ="Poisson",
           control.fixed = list(
             mean = mean.beta,
             prec = list(default = prec.beta)),
-          data = ann_all,
+          data = ann_40,
           num.threads = 10,
           control.predictor = list(compute = T), #list(link = 1), #link is only relevant for NA observations. required to set the right link (i.e., the logit function) 
           #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
