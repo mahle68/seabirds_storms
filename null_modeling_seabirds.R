@@ -197,8 +197,35 @@ ggplot(p_vals) +
   guides(color = guide_legend(title="Year"))
 
 
-#extract strata with p-value less than 0.01
-p_vals %>% 
-  filter(p_more <= 0.01)
+#extract strata with p-value less than 0.05
+sig <- p_vals %>% 
+  filter(p_more <= 0.05)
 
+sig_data <- ann_40 %>% 
+  filter(stratum %in% sig$stratum)
+
+
+par(mfrow = c(3,3))
+for(i in unique(sig_data$stratum)){
+  
+  data <- sig_data[sig_data$stratum == i,]
+  
+  plot(density(data$wind_speed), main = data$common_name[1], ylab = "", xlab = "wind speed (m/s)")
+  abline(v = data[data$used == 1, "wind_speed"], col = "red")
+  
+  if(i == "2009 2009-SULA12 2009-SULA12_3_1_22" ){
+    legend("topright",legend = "used", col = "red", lty = 1,bty = "n")
+  }
+}
+
+
+## ggplot?
+ggplot(sig_data) +
+  stat_density(aes(x = wind_speed), adjust = 1.3, geom = "line") +
+  xlab("Wind speed (m/s)") + 
+  ylab("Density") +
+  theme_ipsum() +
+  facet_wrap(~ stratum, ncol = 3) +
+  geom_vline(xintercept = sig_data$wind_speed[sig_data$used == 1, "wind_speed"], linetype = "dotted", 
+             color = "blue", size = 1.5) 
 
