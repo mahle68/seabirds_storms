@@ -6,7 +6,8 @@
 library(tidyverse)
 library(cowplot) #raincloud plot
 library(parallel)
-
+detach(package:plyr)
+library(sm) #for one density plot per factor level
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
@@ -93,7 +94,7 @@ dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_40)))
 
 observed_stat <- ann_40 %>% 
   group_by(common_name, year, stratum) %>% 
-  arrange(desc(used), .by_group = TRUE) %>%
+  arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached
   summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1))
 
 
@@ -169,33 +170,35 @@ stopCluster(mycl)
 save(p_vals, file = "R_files/p_vals_100_perm_df.RData")
 
 
-#plot the random and observed values
-par(mfrow = c(3,2))
-for(i in c("tradewind","temperate")){
-  zone <- i
-  for(j in c("delta_t", "u", "v"))
-    plot(1:permutations, rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))], type = "l", main = paste(i, "delta rsd in", j, sep = " "))
-  abline(h = obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))], col = "red")
-}
 
-par(mfrow = c(3,2))
-for(i in c("tradewind","temperate")){
-  for(j in c("delta_t", "u", "v"))
-    hist(rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))], breaks = 50, col = "lightgrey", 
-         xlim = c(0, obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))] + 0.5),main = paste(i, "delta rsd in", j, sep = " "))
-  abline(v = obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))], col = "red")
-}
 
-par(mfrow = c(1,2))
+#Step 3: plot and conclusions #####
+load("R_files/p_vals_100_perm_df.RData") #p_vals
 
-##### STEP 5: calculate p-values 
-p_values <- data.frame(NULL)
+p_vals$year_f <- as.character(p_vals$year)
 
-for(i in c("tradewind","temperate")){
-  for(j in c("delta_t", "u", "v")){
-    p <- sum(obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))] <= rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))]) / permutations
-    p_values[i, j] <- p
-  }
-}
+#one plot per species, one curve per year
+ggplot(p_vals) +
+  stat_density(aes(x = p_more, group = year_f, color = year_f), adjust = 1.3,
+               geom = "line", position = "identity", size = 0.55, alpha = 0.7) +
+  xlab("P-value") + 
+  ylab("Density") +
+  theme_ipsum() +
+  facet_wrap(~ common_name, ncol = 3) +
+  guides(color = guide_legend(title="Year"))
+
+#all species in one plot
+ggplot(p_vals) +
+  stat_density(aes(x = p_more, group = common_name, color = common_name), adjust = 1.3,
+               geom = "line", position = "identity", size = 0.55, alpha = 0.8) +
+  xlab("P-value") + 
+  ylab("Density") +
+  theme_ipsum() +
+  guides(color = guide_legend(title="Year"))
+
+
+#extract strata with p-value less than 0.01
+p_vals %>% 
+  filter(p_more <= 0.01)
 
 
