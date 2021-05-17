@@ -204,7 +204,7 @@ sig <- p_vals %>%
 sig_data <- ann_40 %>% 
   filter(stratum %in% sig$stratum)
 
-
+#plot raw winds
 par(mfrow = c(3,3))
 for(i in unique(sig_data$stratum)){
   
@@ -217,6 +217,28 @@ for(i in unique(sig_data$stratum)){
     legend("topright",legend = "used", col = "red", lty = 1,bty = "n")
   }
 }
+
+#plot permutation results
+p_sig <- p_vals %>% 
+  filter(stratum %in% sig$stratum)
+
+#open random stats
+load("R_files/rnd_stats_100_perm_df.RData") #rnd_stat
+
+par(mfrow = c(3,3))
+for(i in unique(p_sig$stratum)){
+  
+  data <- p_sig[p_sig$stratum == i,]
+  rnds <- rnd_stat[rnd_stat$stratum == i,] 
+    
+  plot(density(rnds$max_minus_obs), main = data$common_name[1], ylab = "", xlab = "max_minus_obs_wind")
+  abline(v = data$max_minus_obs, col = "red")
+  
+  if(i == "73500_1_7_15" ){
+    legend("topleft",legend = "observed", col = "red", lty = 1,bty = "n")
+  }
+}
+
 
 
 ## ggplot?
