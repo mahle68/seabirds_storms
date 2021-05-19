@@ -7,6 +7,7 @@
 library(vegan)
 library(ape)
 library(tidyverse)
+library(lme4)
 
 setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms")
 
@@ -127,3 +128,47 @@ summary(pca_out)
 ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = T) +
   theme_minimal()+
   theme(legend.position = "bottom")
+
+
+# lmm or glmm on the whole dataset ####
+load("R_files/pcoa_input_18spp.RData") #pca_input
+
+# add flight type
+#all_data <- pca_input %>% 
+ # inner_join([,c(1:5)], by = c("sci_name" = "scientific.name"))
+
+all_data[all_data$flight.type == "gliding-soaring / shearing","flight.type"] <- "dynamic soaring"
+
+m1 <- lm(wind_speed_ms ~ flight.type, data = all_data)
+
+m2 <- lm(wind_speed_ms ~ flight.type* avg_mass, data = all_data)
+
+boxplot(all_data$wind_speed_ms ~ all_data$flight.type)
+
+
+
+# clustering ####
+#https://uc-r.github.io/kmeans_clustering
+
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
+#devtools::install_github("kassambara/factoextra")
+
+load("R_files/pcoa_18spp.RData") #data
+
+data_z <- scale(data[,c(2,3,6:9)])
+data_z <- scale(data[,c(2,6,9)])
+
+
+
+distance <- get_dist(data_z, method = "pearson")
+  
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+
+k2 <- kmeans(data_z, centers = 3, nstart = 25)
+str(k2)
+
+fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
+
+
+

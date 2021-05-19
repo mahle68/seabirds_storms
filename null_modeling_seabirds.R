@@ -85,7 +85,7 @@ ggsave("rain_cloud_plot_variances.tiff",plot = plot_variances, dpi = 500,
        path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
 
 
-# Step 2: permutation test- In each stratum, is the difference between selected and available wind speed higher/lower than expected by chance? ####
+# Step 2: permutation test- In each stratum, is the difference between selected and max available wind speed higher/lower than expected by chance? ####
 
 #for each stratum, calculate the difference between observed wind speed and max wind speed (incl. observed)
 
@@ -172,7 +172,7 @@ save(p_vals, file = "R_files/p_vals_100_perm_df.RData")
 
 
 
-#Step 3: plot and conclusions #####
+#Step 2.1: plot and conclusions #####
 load("R_files/p_vals_100_perm_df.RData") #p_vals
 
 p_vals$year_f <- as.character(p_vals$year)
@@ -250,4 +250,157 @@ ggplot(sig_data) +
   facet_wrap(~ stratum, ncol = 3) +
   geom_vline(xintercept = sig_data$wind_speed[sig_data$used == 1, "wind_speed"], linetype = "dotted", 
              color = "blue", size = 1.5) 
+
+
+# Step 3: permutation test- In each stratum, is the difference between selected and min available wind speed higher/lower than expected by chance? ####
+
+#for each stratum, calculate the difference between observed wind speed and max wind speed (incl. observed)
+
+ann_40 <- ann_40 %>% 
+  dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_40))) 
+
+observed_stat <- ann_40 %>% 
+  group_by(common_name, year, stratum) %>% 
+  arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached
+  summarize(obs_minus_min = head(wind_speed,1) - min(wind_speed))
+
+
+#randomize and calculate the same statistic
+#shuffle all wind speed values within each year, then recalc the statistic within each stratum
+
+permutations <- 100
+
+#prep cluster
+mycl <- makeCluster(detectCores() - 2)
+clusterExport(mycl, c("permutations", "ann_40")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+})
+
+
+a <- Sys.time()
+
+rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
+  
+  #rnd_stat <- lapply(1:permutations, function(x){
+  
+  ann_40 %>% 
+    group_by(common_name,year) %>% 
+    mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
+    group_by(common_name,year,stratum) %>% 
+    arrange(desc(used), .by_group = TRUE) %>%
+    summarize(obs_minus_min = head(wind_speed,1) - min(wind_speed)) %>% 
+    mutate(perm = x)
+  
+}) %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+Sys.time() - a # 6.626293 mins
+
+stopCluster(mycl)
+
+save(rnd_stat, file = "R_files/rnd_stats_100_perm_df_weakwind.RData")
+
+
+#extract observed and random values for each stratum
+
+#prep cluster
+mycl <- makeCluster(detectCores() - 3)
+clusterExport(mycl, c("permutations", "observed_stat", "rnd_stat")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+})
+
+
+  a <- Sys.time()
+  
+  p_vals <- parLapply(mycl, unique(observed_stat$stratum), function(x){
+    obs <- observed_stat[observed_stat$stratum == x,]
+    rnd <- rnd_stat[rnd_stat$stratum == x,]
+    
+    obs$p_less <- sum(rnd$obs_minus_min <= obs$obs_minus_min)/permutations
+    obs$p_more <- sum(rnd$obs_minus_min >= obs$obs_minus_min)/permutations
+    
+    obs
+  }) %>% 
+    reduce(rbind)
+  
+  
+  Sys.time() - a # 1.396054 hours
+  
+  stopCluster(mycl)
+
+
+save(p_vals, file = "R_files/p_vals_100_perm_df_weakwind.RData")
+
+#Step 3.1: plot and conclusions #####
+load("R_files/p_vals_100_perm_df.RData") #p_vals
+
+p_vals$year_f <- as.character(p_vals$year)
+
+#one plot per species, one curve per year
+ggplot(p_vals) +
+  stat_density(aes(x = p_more, group = year_f, color = year_f), adjust = 1.3,
+               geom = "line", position = "identity", size = 0.55, alpha = 0.7) +
+  xlab("P-value") + 
+  ylab("Density") +
+  theme_ipsum() +
+  facet_wrap(~ common_name, ncol = 3) +
+  guides(color = guide_legend(title="Year"))
+
+#all species in one plot
+ggplot(p_vals) +
+  stat_density(aes(x = p_more, group = common_name, color = common_name), adjust = 1.3,
+               geom = "line", position = "identity", size = 0.55, alpha = 0.8) +
+  xlab("P-value") + 
+  ylab("Density") +
+  theme_ipsum() +
+  guides(color = guide_legend(title="Year"))
+
+
+#extract strata with p-value less than 0.05
+sig <- p_vals %>% 
+  filter(p_more <= 0.05)
+
+sig_data <- ann_40 %>% 
+  filter(stratum %in% sig$stratum)
+
+#plot raw winds
+par(mfrow = c(3,3))
+for(i in unique(sig_data$stratum)){
+  
+  data <- sig_data[sig_data$stratum == i,]
+  
+  plot(density(data$wind_speed), main = data$common_name[1], ylab = "", xlab = "wind speed (m/s)")
+  abline(v = data[data$used == 1, "wind_speed"], col = "red")
+  
+  if(i == "2009 2009-SULA12 2009-SULA12_3_1_22" ){
+    legend("topright",legend = "used", col = "red", lty = 1,bty = "n")
+  }
+}
+
+#plot permutation results
+p_sig <- p_vals %>% 
+  filter(stratum %in% sig$stratum)
+
+#open random stats
+load("R_files/rnd_stats_100_perm_df.RData") #rnd_stat
+
+par(mfrow = c(3,3))
+for(i in unique(p_sig$stratum)){
+  
+  data <- p_sig[p_sig$stratum == i,]
+  rnds <- rnd_stat[rnd_stat$stratum == i,] 
+  
+  plot(density(rnds$max_minus_obs), main = data$common_name[1], ylab = "", xlab = "max_minus_obs_wind")
+  abline(v = data$max_minus_obs, col = "red")
+  
+  if(i == "73500_1_7_15" ){
+    legend("topleft",legend = "observed", col = "red", lty = 1,bty = "n")
+  }
+}
+
 
