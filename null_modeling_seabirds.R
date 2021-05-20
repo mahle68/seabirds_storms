@@ -4,17 +4,18 @@
 
 
 library(tidyverse)
-library(cowplot) #raincloud plot
+#library(cowplot) #raincloud plot
 library(parallel)
-detach(package:plyr)
-library(sm) #for one density plot per factor level
+#detach(package:plyr)
+library(hrbrthemes)
+#library(sm) #for one density plot per factor level
 
-setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
+setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
 
 
-source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
-source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
-source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
+source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
+source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
+source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
 
 #open dataset with alternative steps for hourly steps. prepped in all_species_ssf_2021.R
 load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
@@ -287,7 +288,7 @@ rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){
   
   ann_40 %>% 
     group_by(common_name,year) %>% 
-    mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
+    mutate(wind_speed = sample(wind_speed, replace = F)) %>% ####maybe with replacement? (Fieberg says so)
     group_by(common_name,year,stratum) %>% 
     arrange(desc(used), .by_group = TRUE) %>%
     summarize(obs_minus_min = head(wind_speed,1) - min(wind_speed)) %>% 
@@ -337,7 +338,7 @@ clusterEvalQ(mycl, {
 save(p_vals, file = "R_files/p_vals_100_perm_df_weakwind.RData")
 
 #Step 3.1: plot and conclusions #####
-load("R_files/p_vals_100_perm_df.RData") #p_vals
+load("R_files/p_vals_100_perm_df_weakwind.RData") #p_vals
 
 p_vals$year_f <- as.character(p_vals$year)
 
@@ -387,7 +388,7 @@ p_sig <- p_vals %>%
   filter(stratum %in% sig$stratum)
 
 #open random stats
-load("R_files/rnd_stats_100_perm_df.RData") #rnd_stat
+load("R_files/rnd_stats_100_perm_df_weakwind.RData") #rnd_stat
 
 par(mfrow = c(3,3))
 for(i in unique(p_sig$stratum)){

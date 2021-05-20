@@ -9,7 +9,7 @@ library(ape)
 library(tidyverse)
 library(lme4)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms")
+setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
 
 rsd <- function(x){
   cv <- sd(x, na.rm = T)/abs(mean(x, na.rm = T))
@@ -129,26 +129,75 @@ ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = 
   theme_minimal()+
   theme(legend.position = "bottom")
 
+#try with three variables
+data_z <- scale(data[,c(2,6,9)])
+pca_out <- prcomp(data_z, center = F) #variables are already scaled
 
+
+#how much variation in the original data each PC accounts for
+#http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/112-pca-principal-component-analysis-essentials/
+pca.var <- pca_out$sdev^2
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1) #https://www.youtube.com/watch?v=0Jp4gsfOLMs
+
+#
+var <- get_pca_var(pca_out)
+corrplot(var$cos2, is.corr=FALSE)
+
+summary(pca_out)
+
+ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = T) +
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+fviz_pca_var(pca_out, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+)
+
+#contribution of variables to PCs
+fviz_contrib(pca_out, choice = "var", axes = 1, top = 10)
+corrplot(var$contrib, is.corr=FALSE)   
+
+#-----------------------------------------------------------------------------------------------------
 # lmm or glmm on the whole dataset ####
 load("R_files/pcoa_input_18spp.RData") #pca_input
+load("R_files/pcoa_18spp.RData") #data
+
+data_f <- rownames_to_column(data, var = "common_name")
+
 
 # add flight type
-#all_data <- pca_input %>% 
- # inner_join([,c(1:5)], by = c("sci_name" = "scientific.name"))
+all_data <- pca_input %>% 
+  inner_join(species[,c(1:3)], by = c("sci_name" = "scientific.name")) %>% 
+  rename(common_name = species) %>% 
+  inner_join(data_f, by = c("common_name","flight.type","colony.lat","colony.long"))
 
 all_data[all_data$flight.type == "gliding-soaring / shearing","flight.type"] <- "dynamic soaring"
 
+
+save(all_data, file = "R_files/wspd_max_model_input.RData")
+
 m1 <- lm(wind_speed_ms ~ flight.type, data = all_data)
+
+m3 <- lm(wind_speed_ms ~ avg_mass, data = all_data)
 
 m2 <- lm(wind_speed_ms ~ flight.type* avg_mass, data = all_data)
 
 boxplot(all_data$wind_speed_ms ~ all_data$flight.type)
 
 
+library(mgcv)
+all_data$yday <- yday(all_data$timestamp)
+
+
+g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
+             s(yday, bs = "cc") +
+             avg_mass + flight.type , method = "REML", data = all_data) #, 
+#weights = varPower(form = ~ lat))
+
 
 # clustering ####
-#https://uc-r.github.io/kmeans_clustering
+  #https://uc-r.github.io/kmeans_clustering
 
 library(cluster)    # clustering algorithms
 library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
@@ -158,14 +207,13 @@ load("R_files/pcoa_18spp.RData") #data
 
 data_z <- scale(data[,c(2,3,6:9)])
 data_z <- scale(data[,c(2,6,9)])
-
-
+data_z <- scale(data[,c(2,9)])
 
 distance <- get_dist(data_z, method = "pearson")
   
 fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
 
-k2 <- kmeans(data_z, centers = 3, nstart = 25)
+k2 <- kmeans(data_z, centers = 4, nstart = 25)
 str(k2)
 
 fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
