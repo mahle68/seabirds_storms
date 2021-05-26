@@ -196,6 +196,9 @@ g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
 #weights = varPower(form = ~ lat))
 
 
+g2 <- gam(max_wind ~ s(colony.lat, colony.long) + avg_wsp + avg_mass,
+          data = data)
+
 # clustering ####
   #https://uc-r.github.io/kmeans_clustering
 

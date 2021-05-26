@@ -105,35 +105,35 @@ observed_stat <- ann_40 %>%
 permutations <- 100
 
 #prep cluster
-  mycl <- makeCluster(detectCores() - 3)
-  clusterExport(mycl, c("permutations", "ann_40")) 
+mycl <- makeCluster(detectCores() - 3)
+clusterExport(mycl, c("permutations", "ann_40")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+})
+
+
+a <- Sys.time()
+
+rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
   
-  clusterEvalQ(mycl, {
-    library(dplyr)
-  })
+  #rnd_stat <- lapply(1:permutations, function(x){
   
+  ann_40 %>% 
+    group_by(common_name,year) %>% 
+    mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
+    group_by(common_name,year,stratum) %>% 
+    arrange(desc(used), .by_group = TRUE) %>%
+    summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1)) %>% 
+    mutate(perm = x)
   
-  a <- Sys.time()
-  
-  rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
-    
-    #rnd_stat <- lapply(1:permutations, function(x){
-    
-    ann_40 %>% 
-      group_by(common_name,year) %>% 
-      mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
-      group_by(common_name,year,stratum) %>% 
-      arrange(desc(used), .by_group = TRUE) %>%
-      summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1)) %>% 
-      mutate(perm = x)
-    
-  }) %>% 
-    reduce(rbind) %>% 
-    as.data.frame()
-  
-  Sys.time() - a # 6.626293 mins
-  
-  stopCluster(mycl)
+}) %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+Sys.time() - a # 6.626293 mins
+
+stopCluster(mycl)
 
 save(rnd_stat, file = "R_files/rnd_stats_100_perm_df.RData")
 
