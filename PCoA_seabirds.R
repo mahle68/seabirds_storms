@@ -7,7 +7,10 @@
 library(vegan)
 library(ape)
 library(tidyverse)
+library(ggbiplot)
 library(lme4)
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
 
@@ -17,6 +20,7 @@ rsd <- function(x){
   return(rsd)
 }
 
+## STEP 1: data prep ####
 #annotated tracking data (one hourly sub-sample; flying only; breeding only (as far as I know); adults only (as far as I know :/ ))
 files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
 
@@ -63,6 +67,8 @@ data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>%
 
 save(data, file = "R_files/pcoa_18spp.RData")
 
+
+## STEP 2: PCA ####
 
 #try pca (only numeric variables)
 PCA <- rda(data[,-1], scale = T)
@@ -119,8 +125,8 @@ biplot.pcoa(PCOA, data[,-1])
 ##pca in datacamp
 #https://www.datacamp.com/community/tutorials/pca-analysis-r
 
-library(ggbiplot)
 
+#all variables
 pca_out <- prcomp(data[,-c(1,5,7)], center = T, scale. = T)
 
 summary(pca_out)
@@ -158,32 +164,68 @@ fviz_pca_var(pca_out, col.var = "cos2",
 fviz_contrib(pca_out, choice = "var", axes = 1, top = 10)
 corrplot(var$contrib, is.corr=FALSE)   
 
-#-----------------------------------------------------------------------------------------------------
-# lmm or glmm on the whole dataset ####
-load("R_files/pcoa_input_18spp.RData") #pca_input
+
+####
+
+#only morphological measurements
+pca_morph <- prcomp(data[,c(8,9)], center = T, scale. = T)
+
+
+ggbiplot(pca_morph, labels = rownames(data), groups = data$flight.type, ellipse = T) +
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+fviz_pca_var(pca_morph, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+)
+
+## STEP 3: clustering ####
+
+#https://uc-r.github.io/kmeans_clustering
+
+
+#devtools::install_github("kassambara/factoextra")
+
 load("R_files/pcoa_18spp.RData") #data
 
-data_f <- rownames_to_column(data, var = "common_name")
+data_z <- scale(data[,c(8,9)])
 
 
-# add flight type
-all_data <- pca_input %>% 
-  inner_join(species[,c(1:3)], by = c("sci_name" = "scientific.name")) %>% 
-  rename(common_name = species) %>% 
-  inner_join(data_f, by = c("common_name","flight.type","colony.lat","colony.long"))
+distance <- get_dist(data_z, method = "pearson")
 
-all_data[all_data$flight.type == "gliding-soaring / shearing","flight.type"] <- "dynamic soaring"
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+
+k2 <- kmeans(data_z, centers = 4, nstart = 25)
+str(k2)
+
+fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
 
 
-save(all_data, file = "R_files/wspd_max_model_input.RData")
 
-m1 <- lm(wind_speed_ms ~ flight.type, data = all_data)
 
-m3 <- lm(wind_speed_ms ~ avg_mass, data = all_data)
 
-m2 <- lm(wind_speed_ms ~ flight.type* avg_mass, data = all_data)
+  ## STEP 4: LM and GAM ####
 
-boxplot(all_data$wind_speed_ms ~ all_data$flight.type)
+#on the one-row-per-species dataset
+load("R_files/pcoa_18spp.RData") #data
+
+data <- rownames_to_column(data, var = "common_name")
+data[data$flight.type == "gliding-soaring / shearing", "flight.type"] <- "dynamic soaring"
+
+#LM
+
+m1 <- lm(max_wind ~ colony.long + colony.lat + avg_wsp + avg_mass, data = data)
+
+m3 <- lmer(max_wind ~ avg_wsp + avg_mass + (1|colony.lat), data = data)
+
+m2 <- lm(max_wind ~ flight.type * avg_mass, data = data) #Rsquared = 0.50
+
+m4 <- lm(max_wind ~ flight.type, data = data) #54% of variation is explained
+
+m5 <-  lm(max_wind ~ colony.long + colony.lat, data = data) #Rsquared = 0.3465 
+  
+boxplot(data$max_wind ~ data$flight.type)
 
 
 library(mgcv)
@@ -198,28 +240,3 @@ g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
 
 g2 <- gam(max_wind ~ s(colony.lat, colony.long) + avg_wsp + avg_mass,
           data = data)
-
-# clustering ####
-  #https://uc-r.github.io/kmeans_clustering
-
-library(cluster)    # clustering algorithms
-library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
-#devtools::install_github("kassambara/factoextra")
-
-load("R_files/pcoa_18spp.RData") #data
-
-data_z <- scale(data[,c(2,3,6:9)])
-data_z <- scale(data[,c(2,6,9)])
-data_z <- scale(data[,c(2,9)])
-
-distance <- get_dist(data_z, method = "pearson")
-  
-fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
-
-k2 <- kmeans(data_z, centers = 4, nstart = 25)
-str(k2)
-
-fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
-
-
-
