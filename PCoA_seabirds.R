@@ -11,6 +11,8 @@ library(ggbiplot)
 library(lme4)
 library(cluster)    # clustering algorithms
 library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
+#detach(package:plyr)
+
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
 
@@ -42,6 +44,8 @@ save(pca_input, file = "R_files/pcoa_input_18spp.RData")
 
 
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+morph <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/morphology_data/morphometrics.csv")
+
 
 winds <- pca_input %>% 
   group_by(sci_name) %>% #make sure plyr is detached
@@ -53,19 +57,20 @@ winds <- pca_input %>%
             colony.long = head(colony.long,1))
 
 data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>% 
-  dplyr::select(c(1:5)) %>%
-  separate(wing.span, c("min_wspn","max_wspn")) %>% 
-  separate(body.mass, c("min_mass","max_mass")) %>% 
-  mutate_at(c("min_wspn","max_wspn","min_mass","max_mass"), as.numeric) %>% 
+  dplyr::select(c(1:3)) %>%
+  #separate(wing.span, c("min_wspn","max_wspn")) %>% 
+  #separate(body.mass, c("min_mass","max_mass")) %>% 
+  #mutate_at(c("min_wspn","max_wspn","min_mass","max_mass"), as.numeric) %>% 
   full_join(winds, by = c("scientific.name" = "sci_name")) %>%
-  rowwise () %>% 
-  mutate(avg_wsp = mean(c(min_wspn, max_wspn), na.rm = T),
-         avg_mass = mean(c(min_mass, max_mass), na.rm = T)) %>% 
-  ungroup() %>% 
+  #rowwise () %>% 
+  #mutate(avg_wsp = mean(c(min_wspn, max_wspn), na.rm = T),
+  #       avg_mass = mean(c(min_mass, max_mass), na.rm = T)) %>% 
+  #ungroup() %>% 
+  inner_join(morph[,c(2:7)], by = "species") %>% 
   column_to_rownames("species") %>% 
-  dplyr::select(-c("scientific.name","min_wspn","max_wspn","min_mass","max_mass"))
+  dplyr::select(-"scientific.name")
 
-save(data, file = "R_files/pcoa_18spp.RData")
+save(data, file = "R_files/morph_wind_18spp.RData")
 
 
 ## STEP 2: PCA ####
@@ -200,8 +205,6 @@ k2 <- kmeans(data_z, centers = 4, nstart = 25)
 str(k2)
 
 fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
-
-
 
 
 
