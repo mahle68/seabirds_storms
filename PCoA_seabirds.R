@@ -7,11 +7,12 @@
 library(vegan)
 library(ape)
 library(tidyverse)
-library(ggbiplot)
 library(lme4)
 library(cluster)    # clustering algorithms
-library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools")
+library(factoextra) # clustering algorithms & visualization. to install: if(!require(devtools)) install.packages("devtools"); #devtools::install_github("kassambara/factoextra")
 #detach(package:plyr)
+library(corrplot)
+library(corrr)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
@@ -73,92 +74,74 @@ data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>%
 save(data, file = "R_files/morph_wind_18spp.RData")
 
 
-## STEP 2: PCA ####
+## STEP 2: clustering ####
 
-#try pca (only numeric variables)
-PCA <- rda(data[,-1], scale = T)
-# Now plot a bar plot of relative eigenvalues. This is the percentage variance explained by each axis
-barplot(as.vector(PCA$CA$eig)/sum(PCA$CA$eig)) 
-# How much of the variance in our dataset is explained by the first principal component?
+#https://uc-r.github.io/kmeans_clustering
 
-# Calculate the percent of variance explained by first two axes
-sum((as.vector(PCA$CA$eig)/sum(PCA$CA$eig))[1:2]) # 79%, this is ok.
-# Also try to do it for the first three axes
+load("R_files/morph_wind_18spp.RData") #data
 
-# Now, we`ll plot our results with the plot function
-plot(PCA)
-plot(PCA, display = "sites", type = "points")
-plot(PCA, display = "species", type = "text")
+#data_z <- scale(data[-12,c(8:12)])
+#data_z <- scale(data[-12,c(8,11,12)]) #only mass, wing loading and aspect ratio
 
-# You can extract the species and site scores on the new PC for further analyses:
-speciesPCA <- PCA$CA$u # Site scores
-varPCA <- PCA$CA$v # Species scores
-
-# In a biplot of a PCA, species' scores are drawn as arrows 
-# that point in the direction of increasing values for that variable
-biplot(PCA, choices = c(1,2), type = c("text", "points"), xlim = c(-5,10)) # biplot of axis 1 vs 2
-biplot(PCA, choices = c(1,3), type = c("text","points")) # biplot of axis 1 vs 3
+#Only include variables related to wing shape: wing loading, aspect ratio, wing span
+data_z <- scale(data[-12,c(9,11,12)]) #remove great shearwater. no wing loading info
 
 
 
-#try pcoa
-dist <- vegdist(data[,-1], method = "bray")
+distance <- get_dist(data_z, method = "pearson")
 
-# PCoA is not included in vegan. 
-# We will use the ape package instead
-PCOA <- pcoa(dist)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
 
-# plot the eigenvalues and interpret
-barplot(PCOA$values$Relative_eig[1:10])
-# Can you also calculate the cumulative explained variance of the first 3 axes?
 
-# Some distance measures may result in negative eigenvalues. In that case, add a correction:
-PCOA <- pcoa(dist, correction = "cailliez")
+k2 <- kmeans(data_z, centers = 2, nstart = 25)
+str(k2)
 
-# Plot your results
-biplot.pcoa(PCOA)
+fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
 
-# You see what`s missing? 
-# Indeed, there are no species plotted on this biplot. 
-# That's because we used a dissimilarity matrix (sites x sites) 
-# as input for the PCOA function. 
-# Hence, no species scores could be calculated. 
-#However, we could work around this problem like this:
-biplot.pcoa(PCOA, data[,-1])
 
+k3 <- kmeans(data_z, centers = 3, nstart = 25)
+str(k3)
+
+fviz_cluster(k3, data = data_z, ggtheme = theme_bw())
+
+k4 <- kmeans(data_z, centers = 4, nstart = 25)
+str(k4)
+
+fviz_cluster(k4, data = data_z, ggtheme = theme_bw())
+
+k5 <- kmeans(data_z, centers = 5, nstart = 25)
+str(k5)
+
+fviz_cluster(k5, data = data_z, ggtheme = theme_bw())
+
+
+## STEP 3: PCA ####
+
+#to extract variable importance from clustering (it is basically a pca)
 
 ##pca in datacamp
 #https://www.datacamp.com/community/tutorials/pca-analysis-r
 
 
-#all variables
-pca_out <- prcomp(data[,-c(1,5,7)], center = T, scale. = T)
+pca_out <- prcomp(data_z, center = F, scale. = F) 
 
 summary(pca_out)
 
-ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = T) +
+library(ggbiplot)
+ggbiplot(pca_out, labels = rownames(data)[-12], groups = data$flight.type[-12], ellipse = T) +
   theme_minimal()+
   theme(legend.position = "bottom")
-
-#try with three variables
-data_z <- scale(data[,c(2,6,9)])
-pca_out <- prcomp(data_z, center = F) #variables are already scaled
-
 
 #how much variation in the original data each PC accounts for
 #http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/112-pca-principal-component-analysis-essentials/
 pca.var <- pca_out$sdev^2
 pca.var.per <- round(pca.var/sum(pca.var)*100, 1) #https://www.youtube.com/watch?v=0Jp4gsfOLMs
 
-#
+
 var <- get_pca_var(pca_out)
 corrplot(var$cos2, is.corr=FALSE)
 
 summary(pca_out)
-
-ggbiplot(pca_out, labels = rownames(data), groups = data$flight.type, ellipse = T) +
-  theme_minimal()+
-  theme(legend.position = "bottom")
 
 fviz_pca_var(pca_out, col.var = "cos2",
              gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
@@ -169,56 +152,47 @@ fviz_pca_var(pca_out, col.var = "cos2",
 fviz_contrib(pca_out, choice = "var", axes = 1, top = 10)
 corrplot(var$contrib, is.corr=FALSE)   
 
+#extract the PC values to use in the LM
+loadings <- pca_out$rotation
+axes <- as.data.frame(predict(pca_out, newdata = data_z))
 
-####
+#append to data
+data_spp <- rownames_to_column(data, var = "species")
 
-#only morphological measurements
-pca_morph <- prcomp(data[,c(8,9)], center = T, scale. = T)
+data_pca <-  axes %>%
+  rownames_to_column("species") %>% 
+  full_join(data_spp, by = "species")
 
+save(data_pca, file = "R_files/data_w_PCs.RData")
 
-ggbiplot(pca_morph, labels = rownames(data), groups = data$flight.type, ellipse = T) +
-  theme_minimal()+
-  theme(legend.position = "bottom")
-
-fviz_pca_var(pca_morph, col.var = "cos2",
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
-             repel = TRUE # Avoid text overlapping
-)
-
-## STEP 3: clustering ####
-
-#https://uc-r.github.io/kmeans_clustering
-
-
-#devtools::install_github("kassambara/factoextra")
-
-load("R_files/pcoa_18spp.RData") #data
-
-data_z <- scale(data[,c(8,9)])
-
-
-distance <- get_dist(data_z, method = "pearson")
-
-fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
-
-k2 <- kmeans(data_z, centers = 4, nstart = 25)
-str(k2)
-
-fviz_cluster(k2, data = data_z, ggtheme = theme_bw())
-
-
-
-  ## STEP 4: LM and GAM ####
+## STEP 4: LM and GAM ####
 
 #on the one-row-per-species dataset
-load("R_files/pcoa_18spp.RData") #data
+load("R_files/data_w_PCs.RData") #data_pca
 
-data <- rownames_to_column(data, var = "common_name")
-data[data$flight.type == "gliding-soaring / shearing", "flight.type"] <- "dynamic soaring"
+data_pca[data_pca$flight.type == "gliding-soaring / shearing", "flight.type"] <- "dynamic soaring"
 
 #LM
 
-m1 <- lm(max_wind ~ colony.long + colony.lat + avg_wsp + avg_mass, data = data)
+#z-transform and correlation
+data_sc <- data_pca %>% 
+  mutate_at(c(2:4,10:16),
+          list(z = ~as.numeric(scale(.)))) 
+
+data_sc %>% 
+dplyr::select(c(2:4,10,11)) %>% 
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r) > 0.6) #PC1 and PC2 are correlated
+
+
+m1 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc)
+
+#plot residual vs. the values
+plot(data_sc$max_wind[-18], resid(m1))
+plot(data_sc$colony.lat[-18], resid(m1))
+
+m2 <- lm(max_wind ~ PC1, data = data_sc)
 
 m3 <- lmer(max_wind ~ avg_wsp + avg_mass + (1|colony.lat), data = data)
 
