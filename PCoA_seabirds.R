@@ -84,11 +84,17 @@ load("R_files/morph_wind_18spp.RData") #data
 #data_z <- scale(data[-12,c(8,11,12)]) #only mass, wing loading and aspect ratio
 
 #Only include variables related to wing shape: wing loading, aspect ratio, wing span
-data_z <- scale(data[-12,c(9,11,12)]) #remove great shearwater. no wing loading info
+#data_z <- scale(data[-12,c(9,11,12)]) #remove great shearwater. no wing loading info
+data_z <- scale(data[-12,c(11,12)])
+#data_z <- scale(data[-12,c(8,11,12)])
 
 
+#optimal number of clusters
+fviz_nbclust(data_z, kmeans, method = "wss") #elbow method
+fviz_nbclust(data_z, kmeans, method = "silhouette") #silhouette method
 
-distance <- get_dist(data_z, method = "pearson")
+
+distance <- get_dist(data_z, method = "manhattan")
 
 fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
 
@@ -113,6 +119,34 @@ k5 <- kmeans(data_z, centers = 5, nstart = 25)
 str(k5)
 
 fviz_cluster(k5, data = data_z, ggtheme = theme_bw())
+
+
+
+k6 <- kmeans(data_z, centers = 6, nstart = 25)
+str(k6)
+
+fviz_cluster(k6, data = data_z, ggtheme = theme_bw())
+
+
+
+save(k4, file = "R_files/clustering_4k.R")
+save(k5, file = "R_files/clustering_5k.R")
+
+
+
+
+#clustering for wind and geography
+data_w <- scale(data[-12,c(2:4)]) #wind
+fviz_nbclust(data_w, kmeans, method = "silhouette") #silhouette method
+
+
+dist_w <- get_dist(data_w, method = "manhattan")
+
+
+k5_w <- kmeans(data_w, centers = 2, nstart = 25)
+str(k5_w)
+
+fviz_cluster(k5_w, data = data_z, ggtheme = theme_bw())
 
 
 ## STEP 3: PCA ####
@@ -176,17 +210,26 @@ data_pca[data_pca$flight.type == "gliding-soaring / shearing", "flight.type"] <-
 
 #z-transform and correlation
 data_sc <- data_pca %>% 
-  mutate_at(c(2:4,10:16),
+  mutate_at(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio", "colony.lat", "colony.long"),
           list(z = ~as.numeric(scale(.)))) 
 
 data_sc %>% 
-dplyr::select(c(2:4,10,11)) %>% 
+dplyr::select(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio")) %>% 
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #PC1 and PC2 are correlated
 
 
-m1 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc)
+m1 <- lm(max_wind ~ colony.long + colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
+m1b <- lm(max_wind ~ colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
+
+
+m2 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) 
+
+
+m3 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) #PC1 is only wing loading and aspect ratio
+
+
 
 #plot residual vs. the values
 plot(data_sc$max_wind[-18], resid(m1))
@@ -215,5 +258,5 @@ g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
 #weights = varPower(form = ~ lat))
 
 
-g2 <- gam(max_wind ~ s(colony.lat, colony.long) + avg_wsp + avg_mass,
-          data = data)
+g2 <- gam(max_wind ~ s(colony.lat_z, colony.long_z),
+          data = data_sc)
