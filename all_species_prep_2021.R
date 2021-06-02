@@ -436,3 +436,20 @@ spp2 <- all_spp[((nrow(all_spp)/2) + 1): nrow(all_spp),]
 
 write.csv(spp1, "R_files/all_spp_annotation_1.csv")
 write.csv(spp2, "R_files/all_spp_annotation_2.csv")
+
+#extract colony summaries
+all_spp %>% 
+  group_by(sci_name) %>% 
+  summarize(n_c = n_distinct(colony.name),
+            name = head(colony.name,1))
+
+all_spp %>% 
+  filter(sci_name == "Sula sula") %>% 
+  group_by(colony.name) %>% 
+  summarise(n())
+  
+all_spp %>% 
+  filter(sci_name == "Fregata magnificens") %>% 
+  group_by(colony.name) %>% 
+  summarise(n())
+  

@@ -10,7 +10,7 @@ library(parallel)
 library(hrbrthemes)
 #library(sm) #for one density plot per factor level
 
-setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
+setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
 
 source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
