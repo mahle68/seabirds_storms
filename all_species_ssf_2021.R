@@ -93,7 +93,7 @@ all_spp %>%
 
 #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
 
-move_ls <- lapply(split(all_spp,all_spp$sci_name),function(x){
+move_ls <- lapply(split(all_spp, paste(all_spp$sci_name, all_spp$colony.name, sep = "_")),function(x){
   x <- x %>%
     arrange(TripID, timestamp) %>% 
     as.data.frame()
@@ -102,7 +102,7 @@ move_ls <- lapply(split(all_spp,all_spp$sci_name),function(x){
   
 })
 
-save(move_ls, file = "18_spp_move_ls.RData")
+save(move_ls, file = "20_spp_col_move_ls.RData")
 
 
 #### summary info
@@ -115,36 +115,40 @@ load("R_files/all_spp_sitting_flying_df.RData") #all_spp
 #make sure frigatebird is only in march and april: breeding season
 
 
-spp3 <- all_spp %>% 
-  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
-  filter(sci_name == "Fregata magnificens" & between(month(timestamp), 3,4)|
-           sci_name %in% c("Diomedea exulans", "Sula granti")) %>% 
-  group_by(sci_name, TripID, as.Date(timestamp), hour(timestamp)) %>% 
-  slice(1) %>% 
-  ungroup()
+# spp3 <- all_spp %>% 
+#   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+#   filter(sci_name == "Fregata magnificens" & between(month(timestamp), 3,4)|
+#            sci_name %in% c("Diomedea exulans", "Sula granti")) %>% 
+#   group_by(sci_name, TripID, as.Date(timestamp), hour(timestamp)) %>% 
+#   slice(1) %>% 
+#   ungroup()
+# 
+# #remove dublicates
+# rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(spp3$TripID),timestamps = spp3$timestamp,
+#                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+# 
+# spp3 <- spp3[-rows_to_delete,] 
+# 
+# #convert to move objects (i need to do this to calc speed for flyingsitting assignment)
+# 
+# move_ls <- lapply(split(spp3,spp3$sci_name),function(x){
+#   x <- x %>%
+#     arrange(TripID, timestamp) %>% 
+#     as.data.frame()
+#   mv <- move(x = x$location.long, y = x$location.lat, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
+#   mv
+#   
+# })
+# 
+# save(move_ls, file = "3_spp_move_ls.RData")
 
-#remove dublicates
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(spp3$TripID),timestamps = spp3$timestamp,
-                                                        sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-
-spp3 <- spp3[-rows_to_delete,] 
-
-#convert to move objects (i need to do this to calc speed for flyingsitting assignment)
-
-move_ls <- lapply(split(spp3,spp3$sci_name),function(x){
-  x <- x %>%
-    arrange(TripID, timestamp) %>% 
-    as.data.frame()
-  mv <- move(x = x$location.long, y = x$location.lat, time = x$timestamp, data = x, animal = x$TripID, proj = wgs)
-  mv
-  
-})
-
-save(move_ls, file = "3_spp_move_ls.RData")
+int <- 60 #in minutes
+tol <- 15 #in minutes
+n_alt <- 50 #n of alternative points
 
 
 mycl <- makeCluster(10) 
-clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
+clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na", "int", "tol", "n_alt")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
   library(sf)
@@ -162,15 +166,15 @@ clusterEvalQ(mycl, {
   
 parLapply(mycl, move_ls, function(species){ #each species
   
-  sp_obj_ls <- lapply(split(species), function(track){
+  sp_obj_ls <- lapply(split(species)[1:4], function(track){
     
     #--STEP 1: drop points where the animal is not moving (i.e. sitting)
     track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
     
     
     track_th <- track_flying %>%
-      thinTrackTime(interval = as.difftime(60, units='mins'),
-                    tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
+      thinTrackTime(interval = as.difftime(int, units='mins'),
+                    tolerance = as.difftime(tol, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
@@ -203,15 +207,15 @@ parLapply(mycl, move_ls, function(species){ #each species
       burst
     })
     
-    #put burst_ls into one dataframe
+    #put burst_ls into one sp dataframe
     bursted_sp <- do.call(rbind, burst_ls)
     
     #reassign values
-    
     if(length(bursted_sp) >= 1){
-      bursted_sp$sci_name<-track@idData$sci_name
-      bursted_sp$indID<-track@idData$indID
-      bursted_sp$TripID<-track@idData$TripID
+      bursted_sp$sci_name <- track@idData$sci_name
+      bursted_sp$indID <- track@idData$indID
+      bursted_sp$TripID <- track@idData$TripID
+      bursted_sp$colony.name <- track@idData$colony.name
     }
     
     #bursted_sp$track<-track@idData$seg_id 
@@ -237,8 +241,10 @@ parLapply(mycl, move_ls, function(species){ #each species
   sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
+  
   #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_all_spp/",species@idData$sci_name[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_all_spp/1hr_15min_",species@idData$sci_name[1], "_", species@idData$colony.name[1], ".pdf"))
+  
   par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -262,18 +268,20 @@ parLapply(mycl, move_ls, function(species){ #each species
         previous_point <- burst[this_point-1,] #this is the previous point, for calculating turning angle.
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-        #randomly generate 50 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 50, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl <- rgamma(n = 50, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
-        
         #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
         prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
                                           previous_point@coords[,1], current_point@coords[,1])
         
-        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
         current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
-        rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
+        
+        #randomly generate n alternative points
+        rnd <- data.frame(turning_angle = as.vector(rvonmises(n = n_alt, mu = mu, kappa = kappa)), #randomly generate n step lengths and turning angles
+                          step_length = rgamma(n = n_alt, shape = fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000) %>% 
+          #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
+          mutate(lon = current_point_m@coords[,1] + step_length*cos(turning_angle),
+                 lat = current_point_m@coords[,2] + step_length*sin(turning_angle))
+        
         
         #covnert back to lat-lon proj
         rnd_sp <- rnd
@@ -283,12 +291,14 @@ parLapply(mycl, move_ls, function(species){ #each species
         
         #put used and available points together
         df <- used_point@data %>%  
-          slice(rep(row_number(),51)) %>% #paste each row 50 times for the used and alternative steps
-          mutate(x = c(head(location.long,1),rnd_sp@coords[,1]),
-                 y = c(head(location.lat,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,50)))  %>%
+          slice(rep(row_number(), n_alt+1)) %>% #paste each row n_alt times for the used and alternative steps
+          mutate(location.long = c(head(location.long,1),rnd_sp@coords[,1]), #the coordinates were called x and y in the previous version
+                 location.lat = c(head(location.lat,1),rnd_sp@coords[,2]),
+                 turning_angle = c(head(turning_angle,1),rnd_sp$turning_angle),
+                 step_length = c(head(step_length,1),rnd_sp$step_length),
+                 used = c(1,rep(0,n_alt)))  %>%
           rowwise() %>% 
-          mutate(heading = NCEP.loxodrome.na(lat1 = current_point$location.lat, lat2 = y, lon1 = current_point$location.long, lon2 = x)) %>% 
+          mutate(heading = NCEP.loxodrome.na(lat1 = current_point$location.lat, lat2 = location.lat, lon1 = current_point$location.long, lon2 = location.long)) %>% 
           as.data.frame()
         
         df
@@ -304,7 +314,7 @@ parLapply(mycl, move_ls, function(species){ #each species
   #used_av_track
   
   #save the file
-      save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/",species@idData$sci_name[1], ".RData"))
+      save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/1hr_15min/",species@idData$sci_name[1], "_", species@idData$colony.name[1], ".RData"))
   
 })
 
