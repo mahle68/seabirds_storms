@@ -1,5 +1,6 @@
 #script for null modeling of seabird data
 #May 11. 2021. Elham Nourani, PhD. Radolfzell, DE.
+#update: Jun 7. 2021: make sure to separate the colonies for species from multiple colonies.
 #https://www.jwilber.me/permutationtest/#:~:text=To%20calculate%20the%20p%2Dvalue,of%20test%2Dstatistics%20we%20calculated
 
 
@@ -20,10 +21,25 @@ source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutoria
 #open dataset with alternative steps for hourly steps. prepped in all_species_ssf_2021.R
 load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
 
+#open colony assignments for each trip id. prepped in all_species_prep_2021.R
+load("R_files/trip_colony.RData") #trip_col
+trips <- trip_col %>% 
+  filter(TripID %in% ann_40$TripID)
+
+
+#add colony to ann_40
+
+
+
+ann_40_col <- ann_40 %>% 
+  group_by(sci_name, TripID) %>% 
+  slice(1)
+  left_join(trip_col, by = c("sci_name", "TripID"))
+
 #summary details
-ann_40 %>% 
+ann_40_col %>% 
   filter(used == 1) %>% 
-  group_by(common_name) %>% 
+  group_by(common_name, colony.name) %>% 
   summarize(n_tracks = n_distinct(TripID),
             n_ind = n_distinct(indID),
             n_yr = n_distinct(year),
@@ -102,7 +118,7 @@ observed_stat <- ann_40 %>%
 #randomize and calculate the same statistic
 #shuffle all wind speed values within each year, then recalc the statistic within each stratum
 
-permutations <- 100
+permutations <- 1000
 
 #prep cluster
 mycl <- makeCluster(detectCores() - 3)

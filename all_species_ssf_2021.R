@@ -63,7 +63,7 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
-species <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 # ----------- Step 1: generate alternative steps ####
 
@@ -83,7 +83,7 @@ data_df_all <- all_spp[-rows_to_delete,]
 #summary info
 
 all_spp %>% 
-  group_by(sci_name) %>% 
+  group_by(sci_name, colony.name) %>% 
   summarize(n_tracks = n_distinct(TripID),
             n_ind = n_distinct(inID),
             n_yr = n_distinct(year),

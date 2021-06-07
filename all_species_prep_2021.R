@@ -453,3 +453,12 @@ all_spp %>%
   group_by(colony.name) %>% 
   summarise(n())
   
+#extract colony IDs for each track/species
+
+trip_col <- all_spp %>% 
+  group_by(sci_name, TripID) %>% 
+  summarize(colony.name = head(colony.name,1),
+            colony.lat = head(colony.lat,1),
+            colony.long = head(colony.long,1))
+
+save(trip_col, file = "R_files/trip_colony.RData")
