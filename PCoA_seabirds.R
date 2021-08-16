@@ -24,8 +24,10 @@ rsd <- function(x){
 }
 
 ## STEP 1: data prep ####
+
 #annotated tracking data (one hourly sub-sample; flying only; breeding only (as far as I know); adults only (as far as I know :/ ))
-files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
+files_ls <- list.files("/home/enourani/ownCloud/Work/P
+                       rojects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
 
 pca_input <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
@@ -43,7 +45,21 @@ pca_input <- lapply(files_ls, read.csv, stringsAsFactors = F) %>%
 
 save(pca_input, file = "R_files/pcoa_input_18spp.RData")
 
+#extract timing of breeding (median of all timestamps)
+files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
 
+timing <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>%   #remove points over land
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  mutate(month = month(timestamp),
+         yday = yday(timestamp)) %>% 
+  group_by(sci_name, colony.name) %>% 
+  summarise(med_month = median(month),
+            med_yday = median(yday))
+
+
+#open other info
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 morph <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/morphology_data/morphometrics.csv")
 
