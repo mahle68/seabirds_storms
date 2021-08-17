@@ -12,12 +12,15 @@ library(corrr)
 library(INLA)
 library(survival)
 library(TwoStepCLogit)
+library(CircStats)
+library(circular)
+library(fitdistrplus)
 
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
+setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
 
 NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   deg2rad <- pi/180
@@ -61,9 +64,9 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
     head <-NA}
   return(head)
 }
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
-species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+species <- read.csv("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 # ----------- Step 1: generate alternative steps ####
 
@@ -114,7 +117,23 @@ lapply(move_ls, function(x) length(split(x)))
 load("R_files/all_spp_sitting_flying_df.RData") #all_spp
 #make sure frigatebird is only in march and april: breeding season
 
+ lapply(move_ls, function(x){
+  unlist(lapply(timeLag(x, units="hours"),  c, NA))
+  x
+})
 
+ 
+#for Fregata magnificens_Isla_Contoy, remove tracks with very low resolution (ie. > 3 hr)
+freg_contoy <- move_ls[[5]]
+#extract average time lag at each track
+lapply(timeLag(freg_contoy, units = "hours"), mean, na.rm = T)
+
+freg_contoy$timelag <- unlist(lapply(timeLag(freg_contoy, units = "hours"),c, NA)) #all are over 3 hours. don't use
+
+unlist(lapply(timeLag(move_ls[[12]], units = "hours"),c, NA)) 
+
+#for 
+ 
 # spp3 <- all_spp %>% 
 #   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
 #   filter(sci_name == "Fregata magnificens" & between(month(timestamp), 3,4)|
@@ -142,9 +161,11 @@ load("R_files/all_spp_sitting_flying_df.RData") #all_spp
 # 
 # save(move_ls, file = "3_spp_move_ls.RData")
 
-int <- 60 #in minutes
+load("20_spp_col_move_ls.RData") #move_ls
+
+int <- 60 #in minutes. for galapagos albatross, make this 90
 tol <- 15 #in minutes
-n_alt <- 50 #n of alternative points
+n_alt <- 50 #n of alternative points... seems like this was 100
 
 
 mycl <- makeCluster(10) 
@@ -162,11 +183,12 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-#used_av_ls_60_30 <- parLapply(mycl, move_ls, function(species){ #each species
+#used_av_ls_60_15 <- parLapply(mycl, move_ls, function(species){ #each species
   
-parLapply(mycl, move_ls, function(species){ #each species
+parLapply(mycl, move_ls[13:20], function(species){ #each species
   
-  sp_obj_ls <- lapply(split(species)[1:4], function(track){
+#lapply(move_ls[c(13:20)], function(species){ #each species
+  sp_obj_ls <- lapply(split(species), function(track){
     
     #--STEP 1: drop points where the animal is not moving (i.e. sitting)
     track_flying <- track[is.na(track$FlyingSitting) | track$FlyingSitting == "flying"]
@@ -316,7 +338,7 @@ parLapply(mycl, move_ls, function(species){ #each species
   #save the file
       save(used_av_track, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/1hr_15min/",species@idData$sci_name[1], "_", species@idData$colony.name[1], ".RData"))
   
-})
+  })
 
 Sys.time() - b 
 
@@ -326,48 +348,54 @@ stopCluster(mycl)
 
 # ----------- Step 2: annotate#####
 
-files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/", full.names = T)[c(3,4,16)]
+files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/ssf_input/1hr_15min/", full.names = T)
 
-used_av_ls_60_30 <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+used_av_ls_60_15 <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
 
-save(used_av_ls_60_30, file = "R_files/ssf_input_all_60_30_3spp.RData")
+save(used_av_ls_60_15, file = "R_files/ssf_input_all_60_15.RData")
 
-load("R_files/ssf_input_all_60_30_3spp.RData") #used_av_ls_60_30
+load("R_files/ssf_input_all_60_30_3spp.RData") #used_av_ls_60_15
 
 #create one dataframe with movebank specs
-used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
+used_av_df_60_15 <- lapply(c(1:length(used_av_ls_60_15)), function(i){
   
-  data <- used_av_ls_60_30[[i]] %>% 
+  data <- used_av_ls_60_15[[i]] %>% 
     mutate(date_time = timestamp,
            timestamp = paste(as.character(timestamp),"000",sep = "."),
-           stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
+           stratum = paste(TripID, burst_id, step_id, sep = "_"),
+           year = year(timestamp)) %>% 
     
     as.data.frame()
 }) %>% 
   reduce(rbind)
 
 #rename columns
-colnames(used_av_df_60_30)[c(15,16)] <- c("location-long","location-lat")
+colnames(used_av_df_60_15)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_60_30, "R_files/ssf_input_df_60_30_50_3spp.csv")
+save(used_av_df_60_15, file = "R_files/ssf_input_df_60_15_50.RData")
 
 
-#create 3 files
-df_1 <- used_av_df_60_30 %>% 
-  slice(1:(nrow(used_av_df_60_30)/3))
-write.csv(df_1, "R_files/ssf_input_df_60_30_50_3spp_1.csv")
+#create multiple files
 
-df_2 <- used_av_df_60_30 %>% 
-  slice(((nrow(used_av_df_60_30)/3) + 1):((nrow(used_av_df_60_30)/3)*2))
-write.csv(df_2, "R_files/ssf_input_df_60_30_50_3spp_2.csv")
+n_chunks <- ceiling(nrow(used_av_df_60_15)/1e6)
+nrow_chunks <- round(nrow(used_av_df_60_15)/n_chunks)
 
-df_3 <- used_av_df_60_30 %>% 
-  slice((((nrow(used_av_df_60_30)/3)*2) + 1):nrow(used_av_df_60_30))
-write.csv(df_3, "R_files/ssf_input_df_60_30_50_3spp_3.csv")
+r <- rep(1: n_chunks,  each = nrow_chunks)
+r <- r[-length(r)] #remove one value to make sure the length of r is the same as nrow(used_av_df_60_50)
+
+chunks <- split(used_av_df_60_15, r)
+
+
+#save as csv
+lapply(c(1:length(chunks)), function(i){
+  
+  write.csv(chunks[[i]], paste0("R_files/ssf_input_df_60_15_50_", i, "_.csv"))
+  
+})
 
 
 # # summary stats
-# used_av_df_60_30 %>% 
+# used_av_df_60_15 %>% 
 #   #group_by(species) %>% 
 #   group_by(group) %>% 
 #   summarise(yrs_min = min(year(date_time)),
@@ -376,7 +404,7 @@ write.csv(df_3, "R_files/ssf_input_df_60_30_50_3spp_3.csv")
 #             n_tracks = n_distinct(track))
 
 #visual inspection
-data_sf <- used_av_df_60_30 %>% 
+data_sf <- used_av_df_60_15 %>% 
   filter(used == 1) %>% 
   st_as_sf(coords = c(2,3), crs = wgs)
 
@@ -384,93 +412,102 @@ mapview(data_sf, zcol = "species")
 
 
 #put all annotated data together
-#load 15 species
-load("R_files/ssf_input_annotated_60_30_all.RData") #ann_50_all
+#load 18 species
+load("R_files/ssf_input_df_60_15_50.RData") #used_av_df_60_15 #i don't know what this is. probably from an earlier version.
 
-#load 3 species
-files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/3spp", pattern = ".csv",recursive = T, full.names = T)
+used_av_df_60_15 <- used_av_df_60_15 %>% 
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  dplyr::select(-"date_time")
+
+#rename lat and long
+colnames(used_av_df_60_15)[c(2,3)] <- c("location.long", "location.lat")
+  
+
+#load annotated files
+files_ls <- list.files("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/annotation/10_15_all_colony_sp/", pattern = ".csv",recursive = T, full.names = T)
 
 #append all species
 ann_18 <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
   drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>% #remove points over land
+  dplyr::select(-"date_time") %>% 
   mutate(stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
          u10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
          v10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.,
-         wh = ECMWF.ERA5.SL.Significant.Wave.Height,
-         airp = ECMWF.ERA5.SL.Mean.Sea.Level.Pressure) %>%
+         wh = ECMWF.ERA5.SL.Significant.Wave.Height) %>%
   mutate(row_id = row_number(),
          delta_t = sst - t2m,
          wind_support= wind_support(u = u10m,v = v10m, heading = heading),
          cross_wind= cross_wind(u = u10m, v = v10m,heading = heading),
          wind_speed = sqrt(u10m^2 + v10m^2),
          abs_cross_wind = abs(cross_wind(u = u10m, v = v10m, heading = heading)),
-         common_name = ifelse(sci_name == "Diomedea exulans", "Wandering albatross",
-                              ifelse(sci_name == "Fregata magnificens", "Magnificent frigatebird", "Nazca booby")),
-         year = year(timestamp)) %>% 
-  dplyr::select(-c("hour.timestamp.", "as.Date.timestamp.")) %>% 
-  full_join(ann_50_all) %>% 
-  dplyr::select(-c("location.long", "location.lat")) %>% 
-  rename(location.lat = coords.x2,
-         location.long = coords.x1)
+         year = year(timestamp)) %>%
+  left_join(species[,c(1:2)], by = c("sci_name" = "scientific.name")) %>% 
+  rename(common_name = species) #%>%
+  #full_join(used_av_df_60_15) #what is this!?
 
 
-#extract startum IDs for those that have less than 40 alternative points over the sea
-less_than_40 <- ann_18 %>% 
+save(ann_18, file = "R_files/ann_18.RData")
+
+#extract startum IDs for those that have less than 50 alternative points over the sea
+less_than_30 <- ann_18 %>% 
   filter(used == 0) %>% 
   group_by(stratum) %>% 
   summarise(n = n()) %>% 
-  filter(n < 40) 
+  filter(n < 30) 
 
-# retain 20 alternative steps per stratum
-used <- ann_18 %>% 
-  filter(!(stratum %in% less_than_40$stratum)) %>% 
+# retain 50 alternative steps per stratum
+used <- ann_18 %>%
+  filter(!(stratum %in% less_than_30$stratum)) %>%
   filter(used == 1)
 
-used_avail_40 <- ann_18 %>% 
-  filter(!(stratum %in% less_than_40$stratum)) %>% 
-  filter(used == 0) %>% 
-  group_by(stratum) %>% 
-  sample_n(40, replace = F) %>% 
-  ungroup() %>% 
+used_avail_30 <- ann_18 %>%
+  filter(!(stratum %in% less_than_30$stratum)) %>%
+  filter(used == 0) %>%
+  group_by(stratum) %>%
+  sample_n(30, replace = F) %>%
+  ungroup() %>%
   full_join(used) #append the used levels
- 
-#make sure all strata have 41 points
-no_used <- used_avail_40 %>% 
-  group_by(stratum) %>% 
-  summarise(n = n()) %>% 
-  filter(n < 41) 
 
-ann_40 <- used_avail_40 %>%
+#make sure all strata have 51 points
+no_used <- used_avail_30 %>%
+  group_by(stratum) %>%
+  summarise(n = n()) %>%
+  filter(n < 31)
+
+ann_30 <- used_avail_30 %>%
   filter(!(stratum %in% no_used$stratum))
   
-#do we have 41 rows per stratum?
-ann_40 %>% 
+#do we have 51 rows per stratum?
+ann_30 %>% 
   group_by(stratum) %>% 
   summarise(n = n()) %>% 
-  filter(n != 41) 
+  filter(n != 31) 
 
 
-save(ann_40, file = "R_files/ssf_input_annotated_60_30_40alt_18spp.RData")
+save(ann_30, file = "R_files/ssf_input_annotated_60_15_30alt_18spp.RData")
 
 
 # ----------- Step 3: box plots ####
 
-load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
+load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
 
-ann_40 <- as.data.frame(ann_40)
+ann_30 <- ann_30 %>%  # a lot of NAs in common names
+  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
+  as.data.frame()
+
 #split the data into dynamic soarers and non dynamic soarers
-soarers <- ann_40[ann_40$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
-non_soarers <- ann_40[ann_40$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
+soarers <- ann_30[ann_30$sci_name %in% species[species$flight.type  == "dynamic soaring", "scientific.name"],]
+non_soarers <- ann_30[ann_30$sci_name %in% species[species$flight.type  != "dynamic soaring", "scientific.name"],]
 
-pdf("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers_40_1hr.pdf", width = 15, height = 9)
+#pdf("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/SSF_process_figures/2021_boxplots/15spp_soarers_40_1hr.pdf", width = 15, height = 9)
 
+#separate boxplots for colonies. Maybe put each colony in one figure.
 
-labels <- c("Wind support", "cross wind","Wind speed", "wave height", "air pressure")
-#variables <- c("wind_support", "cross_wind", "wind_speed", "wh","airp")
+labels <- c("Wind support", "cross wind","Wind speed")
 variables <- c("wind_support", "cross_wind", "wind_speed")
 
 X11(width = 15, height = 9)
@@ -487,7 +524,7 @@ for(i in 1:length(variables)){
     legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
   boxplot(soarers[soarers$used == 1, variables[i]] ~ soarers[soarers$used == 1,"common_name"], 
-          yaxt = "n", xaxt = "n", add = T, boxfill = "orange",
+          yaxt = "n", xaxt = "n", add = T, boxfill = "orange", lwd = 0.7, outpch = 20, outcex = 0.8,
           boxwex = 0.25, at = 1:length(unique(soarers[soarers$used == 1, "common_name"])) - 0.15)
   
   boxplot(soarers[soarers$used == 0, variables[i]] ~ soarers[soarers$used == 0, "common_name"], 
@@ -712,7 +749,7 @@ axis(side= 2, at= c(1:n_distinct(wspt$species)), #line=-4.8,
 
 # ----------- Step 5: two step clogit ####
 
-load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
+load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_30
 load("R_files/input_for_smooth_inla.RData") #ann_40 with z-transformation
 
 #empty data frame for coeffs and standard errors
