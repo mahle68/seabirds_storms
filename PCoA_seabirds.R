@@ -45,7 +45,87 @@ pca_input <- lapply(files_ls, read.csv, stringsAsFactors = F) %>%
 
 save(pca_input, file = "R_files/pcoa_input_18spp.RData")
 
-#extract timing of breeding (median of all timestamps)
+#open other info
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
+morph <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/morphology_data/morphometrics.csv")
+
+winds <- pca_input %>% 
+  group_by(sci_name) %>% #make sure plyr is detached: detach("package:plyr", unload=TRUE)
+  summarise(max_wind = max(wind_speed_kmh),
+            min_wind = min(wind_speed_kmh),
+            avg_wind = mean(wind_speed_kmh),
+            median_wind = median(wind_speed_kmh),
+            quant95_wind = quantile(wind_speed_kmh, probs = 0.95),
+            colony.lat = head(colony.lat,1),
+            colony.long = head(colony.long,1))
+
+data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>% 
+  dplyr::select(c(1:3)) %>%
+  full_join(winds, by = c("scientific.name" = "sci_name")) %>%
+  inner_join(morph[,c(2:7)], by = "species") %>% 
+  column_to_rownames("species") %>% 
+  dplyr::select(-"scientific.name")
+
+save(data, file = "R_files/morph_wind_18spp.RData")
+
+
+## STEP 3: PCA ####
+load("R_files/morph_wind_18spp.RData") #old data prepared in older version of this code. one row per species
+
+#wing loading and aspect ratio are correlated
+cor(data[-12,c("wing.loading..Nm.2.", "aspect.ratio")]) #0.77
+
+data_z <- scale(data[-12,c("wing.loading..Nm.2.", "aspect.ratio")])
+
+##pca in datacamp
+#https://www.datacamp.com/community/tutorials/pca-analysis-r
+
+
+pca_out <- prcomp(data_z, center = F, scale. = F) 
+
+summary(pca_out)
+
+library(ggbiplot)
+ggbiplot(pca_out, labels = rownames(data)[-12], groups = data$flight.type[-12], ellipse = T) +
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+#how much variation in the original data each PC accounts for
+#http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/112-pca-principal-component-analysis-essentials/
+pca.var <- pca_out$sdev^2
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1) #https://www.youtube.com/watch?v=0Jp4gsfOLMs
+
+
+var <- get_pca_var(pca_out)
+corrplot(var$cos2, is.corr=FALSE)
+
+summary(pca_out)
+
+fviz_pca_var(pca_out, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+)
+
+#contribution of variables to PCs
+fviz_contrib(pca_out, choice = "var", axes = 1, top = 10) # contribution to the first PC is 50-50??
+corrplot(var$contrib, is.corr=FALSE)   
+
+#extract the PC values to use in the LM
+loadings <- pca_out$rotation
+axes <- as.data.frame(predict(pca_out, newdata = data_z))
+
+#append to data
+data_spp <- rownames_to_column(data, var = "species")
+
+data_pca <-  axes %>%
+  rownames_to_column("species") %>% 
+  full_join(data_spp, by = "species")
+
+save(data_pca, file = "R_files/data_w_PCs.RData") #two variables: wing loading and aspect ratio
+
+## STEP 3: add timing of breeding ####
+
+# (median of all timestamps)
 files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
 
 timing <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
@@ -55,46 +135,94 @@ timing <- lapply(files_ls, read.csv, stringsAsFactors = F) %>%
   mutate(month = month(timestamp),
          yday = yday(timestamp)) %>% 
   group_by(sci_name, colony.name) %>% 
-  summarise(med_month = median(month),
-            med_yday = median(yday))
+  summarise(median_breeding_m = median(month),
+            median_breeding_yday = median(yday))
+
+#add wind and morphology variables
+lm_input <- timing %>% 
+  left_join(species[,c(1,2)], by = c("sci_name" = "scientific.name")) %>% 
+  full_join(data_pca, by = "species") %>% 
+  dplyr::select(c(1,5,8,2,14,15,3,4,16:20,9:13,6,7)) 
+
+save(lm_input, file = "R_files/lm_input_20spp_col.RData")
+
+#also save as csv and send to Emily
+write.csv(lm_input[,-c(19,20)], "R_files/wind_data.csv")
 
 
-#open other info
-species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
-morph <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/morphology_data/morphometrics.csv")
+## STEP 4: LM and GAM ####
+
+#on the one-row-per-species dataset
+load("R_files/data_w_PCs.RData") #data_pca
+
+data_pca[data_pca$flight.type == "gliding-soaring / shearing", "flight.type"] <- "dynamic soaring"
+
+#LM
 
 
-winds <- pca_input %>% 
-  group_by(sci_name) %>% #make sure plyr is detached
-  summarise(max_wind = max(wind_speed_kmh),
-            min_wind = min(wind_speed_kmh),
-            rsd_wind = rsd(wind_speed_kmh),
-            quant_95 = quantile(wind_speed_kmh, probs = 0.95),
-            colony.lat = head(colony.lat,1),
-            colony.long = head(colony.long,1))
-
-data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>% 
-  dplyr::select(c(1:3)) %>%
-  #separate(wing.span, c("min_wspn","max_wspn")) %>% 
-  #separate(body.mass, c("min_mass","max_mass")) %>% 
-  #mutate_at(c("min_wspn","max_wspn","min_mass","max_mass"), as.numeric) %>% 
-  full_join(winds, by = c("scientific.name" = "sci_name")) %>%
-  #rowwise () %>% 
-  #mutate(avg_wsp = mean(c(min_wspn, max_wspn), na.rm = T),
-  #       avg_mass = mean(c(min_mass, max_mass), na.rm = T)) %>% 
-  #ungroup() %>% 
-  inner_join(morph[,c(2:7)], by = "species") %>% 
-  column_to_rownames("species") %>% 
-  dplyr::select(-"scientific.name")
-
-save(data, file = "R_files/morph_wind_18spp.RData")
 
 
-## STEP 2: clustering ####
+#z-transform and correlation
+data_sc <- data_pca %>% 
+  mutate_at(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio", "colony.lat", "colony.long"),
+          list(z = ~as.numeric(scale(.)))) 
+
+data_sc %>% 
+dplyr::select(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio")) %>% 
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r) > 0.6) #PC1 and PC2 are correlated
+
+
+m1 <- lm(max_wind ~ colony.long + colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
+m1b <- lm(max_wind ~ colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
+
+
+m2 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) 
+
+
+m3 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) #PC1 is only wing loading and aspect ratio
+
+
+
+#plot residual vs. the values
+plot(data_sc$max_wind[-18], resid(m1))
+plot(data_sc$colony.lat[-18], resid(m1))
+
+m2 <- lm(max_wind ~ PC1, data = data_sc)
+
+m3 <- lmer(max_wind ~ avg_wsp + avg_mass + (1|colony.lat), data = data)
+
+m2 <- lm(max_wind ~ flight.type * avg_mass, data = data) #Rsquared = 0.50
+
+m4 <- lm(max_wind ~ flight.type, data = data) #54% of variation is explained
+
+m5 <-  lm(max_wind ~ colony.long + colony.lat, data = data) #Rsquared = 0.3465 
+  
+boxplot(data$max_wind ~ data$flight.type)
+
+
+library(mgcv)
+all_data$yday <- yday(all_data$timestamp)
+
+
+g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
+             s(yday, bs = "cc") +
+             avg_mass + flight.type , method = "REML", data = all_data) #, 
+#weights = varPower(form = ~ lat))
+
+
+g2 <- gam(max_wind ~ s(colony.lat_z, colony.long_z),
+          data = data_sc)
+
+
+###############################
+## STEP 2: clustering #### 
+#do i need this step?
 
 #https://uc-r.github.io/kmeans_clustering
 
-load("R_files/morph_wind_18spp.RData") #data
+load("R_files/morph_wind_20spp_col.RData") #data
 
 #data_z <- scale(data[-12,c(8:12)])
 #data_z <- scale(data[-12,c(8,11,12)]) #only mass, wing loading and aspect ratio
@@ -164,115 +292,3 @@ str(k5_w)
 
 fviz_cluster(k5_w, data = data_z, ggtheme = theme_bw())
 
-
-## STEP 3: PCA ####
-
-#to extract variable importance from clustering (it is basically a pca)
-
-##pca in datacamp
-#https://www.datacamp.com/community/tutorials/pca-analysis-r
-
-
-pca_out <- prcomp(data_z, center = F, scale. = F) 
-
-summary(pca_out)
-
-library(ggbiplot)
-ggbiplot(pca_out, labels = rownames(data)[-12], groups = data$flight.type[-12], ellipse = T) +
-  theme_minimal()+
-  theme(legend.position = "bottom")
-
-#how much variation in the original data each PC accounts for
-#http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/112-pca-principal-component-analysis-essentials/
-pca.var <- pca_out$sdev^2
-pca.var.per <- round(pca.var/sum(pca.var)*100, 1) #https://www.youtube.com/watch?v=0Jp4gsfOLMs
-
-
-var <- get_pca_var(pca_out)
-corrplot(var$cos2, is.corr=FALSE)
-
-summary(pca_out)
-
-fviz_pca_var(pca_out, col.var = "cos2",
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
-             repel = TRUE # Avoid text overlapping
-)
-
-#contribution of variables to PCs
-fviz_contrib(pca_out, choice = "var", axes = 1, top = 10)
-corrplot(var$contrib, is.corr=FALSE)   
-
-#extract the PC values to use in the LM
-loadings <- pca_out$rotation
-axes <- as.data.frame(predict(pca_out, newdata = data_z))
-
-#append to data
-data_spp <- rownames_to_column(data, var = "species")
-
-data_pca <-  axes %>%
-  rownames_to_column("species") %>% 
-  full_join(data_spp, by = "species")
-
-save(data_pca, file = "R_files/data_w_PCs.RData")
-
-## STEP 4: LM and GAM ####
-
-#on the one-row-per-species dataset
-load("R_files/data_w_PCs.RData") #data_pca
-
-data_pca[data_pca$flight.type == "gliding-soaring / shearing", "flight.type"] <- "dynamic soaring"
-
-#LM
-
-#z-transform and correlation
-data_sc <- data_pca %>% 
-  mutate_at(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio", "colony.lat", "colony.long"),
-          list(z = ~as.numeric(scale(.)))) 
-
-data_sc %>% 
-dplyr::select(c("body.mass..kg.","wing.span..m.","wing.area..m2.","wing.loading..Nm.2.","aspect.ratio")) %>% 
-  correlate() %>% 
-  stretch() %>% 
-  filter(abs(r) > 0.6) #PC1 and PC2 are correlated
-
-
-m1 <- lm(max_wind ~ colony.long + colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
-m1b <- lm(max_wind ~ colony.lat + wing.loading..Nm.2._z, data = data_sc) #wing loading and aspect ratio are correlated
-
-
-m2 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) 
-
-
-m3 <- lm(max_wind ~ colony.long + colony.lat + PC1, data = data_sc) #PC1 is only wing loading and aspect ratio
-
-
-
-#plot residual vs. the values
-plot(data_sc$max_wind[-18], resid(m1))
-plot(data_sc$colony.lat[-18], resid(m1))
-
-m2 <- lm(max_wind ~ PC1, data = data_sc)
-
-m3 <- lmer(max_wind ~ avg_wsp + avg_mass + (1|colony.lat), data = data)
-
-m2 <- lm(max_wind ~ flight.type * avg_mass, data = data) #Rsquared = 0.50
-
-m4 <- lm(max_wind ~ flight.type, data = data) #54% of variation is explained
-
-m5 <-  lm(max_wind ~ colony.long + colony.lat, data = data) #Rsquared = 0.3465 
-  
-boxplot(data$max_wind ~ data$flight.type)
-
-
-library(mgcv)
-all_data$yday <- yday(all_data$timestamp)
-
-
-g1 <- gamm(wind_speed_ms ~ s(location.lat, location.long, k = 100) +
-             s(yday, bs = "cc") +
-             avg_mass + flight.type , method = "REML", data = all_data) #, 
-#weights = varPower(form = ~ lat))
-
-
-g2 <- gam(max_wind ~ s(colony.lat_z, colony.long_z),
-          data = data_sc)
