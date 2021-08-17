@@ -17,69 +17,32 @@ library(corrr)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms")
 
-rsd <- function(x){
-  cv <- sd(x, na.rm = T)/abs(mean(x, na.rm = T))
-  rsd <- cv*100
-  return(rsd)
-}
 
-## STEP 1: data prep ####
+## STEP 1: PCA ####
+#species-specific
+#------------------ prep input data 
+species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv") %>% 
+  filter(scientific.name %in% c( "Ardenna gravis", "Diomedea dabbenena", "Diomedea exulans", "Fregata magnificens", "Fregata minor", "Morus bassanus", "Morus capensis", "Phaethon lepturus", "Phaethon rubricauda", 
+                          "Phoebastria irrorata", "Phoebetria fusca", "Procellaria cinerea", "Pterodroma incerta", "Pterodroma mollis",  "Sula dactylatra", "Sula granti",  "Sula sula", "Thalassarche chlororhynchos"))
 
-#annotated tracking data (one hourly sub-sample; flying only; breeding only (as far as I know); adults only (as far as I know :/ ))
-files_ls <- list.files("/home/enourani/ownCloud/Work/P
-                       rojects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
-
-pca_input <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
-  reduce(full_join) %>% 
-  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>%   #remove points over land
-  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
-         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
-         u10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
-         v10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.,
-         wh = ECMWF.ERA5.SL.Significant.Wave.Height,
-         airp = ECMWF.ERA5.SL.Mean.Sea.Level.Pressure) %>%
-  mutate(delta_t = sst - t2m,
-         wind_speed_ms = sqrt(u10m^2 + v10m^2),
-         wind_speed_kmh = sqrt(u10m^2 + v10m^2) * 3.6)
-
-save(pca_input, file = "R_files/pcoa_input_18spp.RData")
-
-#open other info
-species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 morph <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/morphology_data/morphometrics.csv")
 
-winds <- pca_input %>% 
-  group_by(sci_name) %>% #make sure plyr is detached: detach("package:plyr", unload=TRUE)
-  summarise(max_wind = max(wind_speed_kmh),
-            min_wind = min(wind_speed_kmh),
-            avg_wind = mean(wind_speed_kmh),
-            median_wind = median(wind_speed_kmh),
-            quant95_wind = quantile(wind_speed_kmh, probs = 0.95),
-            colony.lat = head(colony.lat,1),
-            colony.long = head(colony.long,1))
-
-data <- species[species$scientific.name %in% unique(pca_input$sci_name),] %>% 
+data <- species %>% 
   dplyr::select(c(1:3)) %>%
-  full_join(winds, by = c("scientific.name" = "sci_name")) %>%
   inner_join(morph[,c(2:7)], by = "species") %>% 
   column_to_rownames("species") %>% 
   dplyr::select(-"scientific.name")
 
-save(data, file = "R_files/morph_wind_18spp.RData")
+save(data, file = "R_files/morph_18spp.RData")
 
-
-## STEP 3: PCA ####
-load("R_files/morph_wind_18spp.RData") #old data prepared in older version of this code. one row per species
-
-#wing loading and aspect ratio are correlated
+#------------------ wing loading and aspect ratio correlation
 cor(data[-12,c("wing.loading..Nm.2.", "aspect.ratio")]) #0.77
 
 data_z <- scale(data[-12,c("wing.loading..Nm.2.", "aspect.ratio")])
 
+#------------------ run pca and investigate results
 ##pca in datacamp
 #https://www.datacamp.com/community/tutorials/pca-analysis-r
-
 
 pca_out <- prcomp(data_z, center = F, scale. = F) 
 
@@ -121,10 +84,49 @@ data_pca <-  axes %>%
   rownames_to_column("species") %>% 
   full_join(data_spp, by = "species")
 
-save(data_pca, file = "R_files/data_w_PCs.RData") #two variables: wing loading and aspect ratio
+save(data_pca, file = "R_files/data_morph_PCs.RData") #two variables: wing loading and aspect ratio
 
-## STEP 3: add timing of breeding ####
+## STEP 2: summarize wind and timing of breeding ####
+#species-colony-specific
 
+#annotated tracking data (one hourly sub-sample; flying only; breeding only (as far as I know); adults only (as far as I know :/ ))
+files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
+
+ann <- lapply(files_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  drop_na(ECMWF.ERA5.SL.Sea.Surface.Temperature) %>%   #remove points over land
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+         v10m = ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.,
+         wh = ECMWF.ERA5.SL.Significant.Wave.Height,
+         airp = ECMWF.ERA5.SL.Mean.Sea.Level.Pressure) %>%
+  mutate(delta_t = sst - t2m,
+         wind_speed_ms = sqrt(u10m^2 + v10m^2),
+         wind_speed_kmh = sqrt(u10m^2 + v10m^2) * 3.6,
+         month = month(timestamp),
+         yday = yday(timestamp))
+
+save(ann, file = "R_files/ann_18spp.RData")
+
+
+wind_br <- ann %>% 
+  group_by(sci_name, colony.name) %>% #make sure plyr is detached: detach("package:plyr", unload=TRUE)
+  summarise(min_wind = min(wind_speed_kmh),
+            avg_wind = mean(wind_speed_kmh),
+            median_wind = median(wind_speed_kmh),
+            quant95_wind = quantile(wind_speed_kmh, probs = 0.95),
+            max_wind = max(wind_speed_kmh),
+            colony.lat = head(colony.lat,1),
+            colony.long = head(colony.long,1),
+            median_breeding_m = median(month),
+            median_breeding_yday = median(yday))
+
+save(wind_br, file = "R_files/wind_br_18spp.RData")
+
+## STEP 2: summarize timing of breeding ####
+#species-colony-specific
 # (median of all timestamps)
 files_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/all_spp_for_pcoa/", pattern = ".csv",recursive = T, full.names = T)
 
