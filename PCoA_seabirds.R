@@ -163,12 +163,13 @@ m_morph <- lm(max_wind ~ PC1, data = lm_input) #0.171
 m_morph2 <- lm(max_wind ~ wing.loading..Nm.2., data = lm_input) #0.2898
 m_morph3 <- lm(max_wind ~ wing.loading..Nm.2._z + wing.area..m2._z, data = lm_input_z) #0.3096
 m_loc_morph <- lm(max_wind ~ colony.long_z + colony.lat_z + wing.loading..Nm.2._z, data = lm_input_z) #0.4978 
+m_loc_morph2 <- lm(max_wind ~ colony.lat_z + wing.loading..Nm.2._z, data = lm_input_z) #0.4793  
 
-
+m_loc_morph3 <- lm(max_wind ~ colony.name )
 
 m1 <- lm(max_wind ~ colony.long + colony.lat + PC1 + median_breeding_m, data = lm_input) 
 
-m2 <- lm(max_wind ~ colony.long_z + colony.lat_z + PC1_z + breeding_ch, data = lm_input_z) 
+m2 <- lm(max_wind ~ colony.long_z + colony.lat_z + PC1_z + breeding_ch, data = lm_input_z)
 
 
 m3 <- m1 <- lm(max_wind ~ colony.lat * PC1 + median_breeding_m, data = lm_input) #adj Rsq = 0.6175 #this model is wrong because timing of breeding is assumed continuous
@@ -176,7 +177,7 @@ m3 <- m1 <- lm(max_wind ~ colony.lat * PC1 + median_breeding_m, data = lm_input)
 m4 <- m1 <- lm(max_wind ~ colony.lat * PC1 , data = lm_input) #adj Rsq = 0.4032
 
 m5 <- m1 <- lm(max_wind ~ colony.lat * PC1 + breeding_ch, data = lm_input_z) #adj Rsq = 0.4656 
-
+  
 m6 <- lm(max_wind ~ colony.lat + wing.loading..Nm.2., data = lm_input) #adj Rsq = 0.4793 
 
 
