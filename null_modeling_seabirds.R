@@ -18,38 +18,19 @@ source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutoria
 source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
 source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
 
-#open dataset with alternative steps for hourly steps. prepped in all_species_ssf_2021.R
-load("R_files/ssf_input_annotated_60_30_40alt_18spp.RData") #ann_40
-
-#open colony assignments for each trip id. prepped in all_species_prep_2021.R
-load("R_files/trip_colony.RData") #trip_col
-trips <- trip_col %>% 
-  filter(TripID %in% ann_40$TripID)
+#open dataset with alternative steps for hourly steps. prepped in random_steps.R
+load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
 
 
-#add colony to ann_40
+ann_30 <- ann_30 %>%  # a lot of NAs in common names
+  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
+  as.data.frame()
 
-
-
-ann_40_col <- ann_40 %>% 
-  group_by(sci_name, TripID) %>% 
-  slice(1)
-  left_join(trip_col, by = c("sci_name", "TripID"))
-
-#summary details
-ann_40_col %>% 
-  filter(used == 1) %>% 
-  group_by(common_name, colony.name) %>% 
-  summarize(n_tracks = n_distinct(TripID),
-            n_ind = n_distinct(indID),
-            n_yr = n_distinct(year),
-            min_yr = min(year),
-            max_yr = max(year))
 
 # Step 1: calc within-stratum variances ####
 
 #calculate and plot within stratum variances
-data_var <- ann_40 %>%
+data_var <- ann_30 %>%
   group_by(stratum) %>%
   summarise(wspd_var = var(wind_speed),
             u_var = var(u10m),
@@ -59,61 +40,60 @@ data_var <- ann_40 %>%
             year = head(year, 1))
 
 
-#rain cloud plots for variances
-#restructure the dataframe
-wspd_var <- data_var %>% 
-  dplyr::select(-c(u_var,v_var,wspt_var)) %>% 
-  mutate(variable = "wind speed") %>% 
-  dplyr::rename(score = wspd_var)
-
-wspt_var <- data_var %>% 
-  dplyr::select(-c(u_var,v_var,wspd_var)) %>% 
-  mutate(variable = "wind support") %>% 
-  dplyr::rename(score = wspt_var)
-
-w_u_var <- data_var %>% 
-  dplyr::select(-c(v_var,wspd_var, wspt_var)) %>% 
-  mutate(variable = "u wind") %>% 
-  dplyr::rename(score = u_var)
-
-w_v_var <- data_var %>% 
-  dplyr::select(-c(u_var,wspd_var, wspt_var)) %>% 
-  mutate(variable = "v wind") %>% 
-  dplyr::rename(score = v_var)
-
-
-new_data_var <- rbind(wspd_var, wspt_var, w_u_var, w_v_var)
-new_data_var <- rbind(w_u_var, w_v_var)
-
-X11()
-plot_variances <- ggplot(new_data_var, aes(x = variable, y = score, fill = species)) +
-  ylim(0,20) +
-  geom_flat_violin(aes(fill = species),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
-  geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = species),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
-  geom_boxplot(aes(x = variable, y = score, fill = species),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
-  scale_colour_brewer(palette = "Dark2")+
-  scale_fill_brewer(palette = "Dark2")+
-  theme_classic(base_size = 20) +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank()) #+
-  #facet_grid(season~.)
-
-ggsave("rain_cloud_plot_variances.tiff",plot = plot_variances, dpi = 500,
-       path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
+# #rain cloud plots for variances
+# #restructure the dataframe
+# wspd_var <- data_var %>% 
+#   dplyr::select(-c(u_var,v_var,wspt_var)) %>% 
+#   mutate(variable = "wind speed") %>% 
+#   dplyr::rename(score = wspd_var)
+# 
+# wspt_var <- data_var %>% 
+#   dplyr::select(-c(u_var,v_var,wspd_var)) %>% 
+#   mutate(variable = "wind support") %>% 
+#   dplyr::rename(score = wspt_var)
+# 
+# w_u_var <- data_var %>% 
+#   dplyr::select(-c(v_var,wspd_var, wspt_var)) %>% 
+#   mutate(variable = "u wind") %>% 
+#   dplyr::rename(score = u_var)
+# 
+# w_v_var <- data_var %>% 
+#   dplyr::select(-c(u_var,wspd_var, wspt_var)) %>% 
+#   mutate(variable = "v wind") %>% 
+#   dplyr::rename(score = v_var)
+# 
+# 
+# new_data_var <- rbind(wspd_var, wspt_var, w_u_var, w_v_var)
+# new_data_var <- rbind(w_u_var, w_v_var)
+# 
+# X11()
+# plot_variances <- ggplot(new_data_var, aes(x = variable, y = score, fill = species)) +
+#   ylim(0,20) +
+#   geom_flat_violin(aes(fill = species),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
+#   geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = species),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
+#   geom_boxplot(aes(x = variable, y = score, fill = species),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
+#   scale_colour_brewer(palette = "Dark2")+
+#   scale_fill_brewer(palette = "Dark2")+
+#   theme_classic(base_size = 20) +
+#   theme(axis.title.x = element_blank(),
+#         axis.title.y = element_blank()) #+
+#   #facet_grid(season~.)
+# 
+# ggsave("rain_cloud_plot_variances.tiff",plot = plot_variances, dpi = 500,
+#        path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
 
 
 # Step 2: permutation test- In each stratum, is the difference between selected and max available wind speed higher/lower than expected by chance? ####
 
 #for each stratum, calculate the difference between observed wind speed and max wind speed (incl. observed)
 
-ann_40 <- ann_40 %>% 
-dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_40))) 
+#ann_30 <- ann_30 %>% 
+#dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_30))) 
 
-observed_stat <- ann_40 %>% 
-  group_by(common_name, year, stratum) %>% 
-  arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached
+observed_stat <- ann_30 %>% 
+  group_by(group, year, stratum) %>% #group by species-colony instead of just species
+  arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached  detach("package:plyr", unload=TRUE)
   summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1))
-
 
 #randomize and calculate the same statistic
 #shuffle all wind speed values within each year, then recalc the statistic within each stratum
@@ -122,7 +102,7 @@ permutations <- 1000
 
 #prep cluster
 mycl <- makeCluster(detectCores() - 3)
-clusterExport(mycl, c("permutations", "ann_40")) 
+clusterExport(mycl, c("permutations", "ann_30")) 
 
 clusterEvalQ(mycl, {
   library(dplyr)
@@ -134,8 +114,8 @@ a <- Sys.time()
 rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
   
   #rnd_stat <- lapply(1:permutations, function(x){
-  
-  ann_40 %>% 
+  =
+  ann_30 %>% 
     group_by(common_name,year) %>% 
     mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
     group_by(common_name,year,stratum) %>% 
@@ -218,7 +198,7 @@ ggplot(p_vals) +
 sig <- p_vals %>% 
   filter(p_more <= 0.05)
 
-sig_data <- ann_40 %>% 
+sig_data <- ann_30 %>% 
   filter(stratum %in% sig$stratum)
 
 #plot raw winds
@@ -273,10 +253,10 @@ ggplot(sig_data) +
 
 #for each stratum, calculate the difference between observed wind speed and max wind speed (incl. observed)
 
-ann_40 <- ann_40 %>% 
-  dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_40))) 
+ann_30 <- ann_30 %>% 
+  dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_30))) 
 
-observed_stat <- ann_40 %>% 
+observed_stat <- ann_30 %>% 
   group_by(common_name, year, stratum) %>% 
   arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached
   summarize(obs_minus_min = head(wind_speed,1) - min(wind_speed))
@@ -289,7 +269,7 @@ permutations <- 100
 
 #prep cluster
 mycl <- makeCluster(detectCores() - 2)
-clusterExport(mycl, c("permutations", "ann_40")) 
+clusterExport(mycl, c("permutations", "ann_30")) 
 
 clusterEvalQ(mycl, {
   library(dplyr)
@@ -302,7 +282,7 @@ rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){
   
   #rnd_stat <- lapply(1:permutations, function(x){
   
-  ann_40 %>% 
+  ann_30 %>% 
     group_by(common_name,year) %>% 
     mutate(wind_speed = sample(wind_speed, replace = F)) %>% ####maybe with replacement? (Fieberg says so)
     group_by(common_name,year,stratum) %>% 
@@ -382,7 +362,7 @@ ggplot(p_vals) +
 sig <- p_vals %>% 
   filter(p_more <= 0.05)
 
-sig_data <- ann_40 %>% 
+sig_data <- ann_30 %>% 
   filter(stratum %in% sig$stratum)
 
 #plot raw winds

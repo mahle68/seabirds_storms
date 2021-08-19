@@ -2,6 +2,7 @@
 #follows up from all_species_prep_2021.R
 #Elham Nourani. Radofzell, DE. April 8. 2021
 #clogit z transofmation didn't change things.
+#update Aug. 19: separate the code into step generation and analysis. The final manuscript will include step generation, then permutations (null_modeling_seabirds.R)
 
 library(tidyverse)
 library(lubridate)
