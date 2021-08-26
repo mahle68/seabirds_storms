@@ -8,21 +8,21 @@ library(tidyverse)
 #library(cowplot) #raincloud plot
 library(parallel)
 #detach(package:plyr)
-library(hrbrthemes)
+#library(hrbrthemes)
 #library(sm) #for one density plot per factor level
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
 
-source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
-source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
-source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
+#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
+#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
+#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
 
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
 
 
-ann_30 <- ann_30 %>%  # a lot of NAs in common names
+ann_30 <- ann_30 %>%  
   mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
   as.data.frame()
 
@@ -95,13 +95,15 @@ observed_stat <- ann_30 %>%
   arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached  detach("package:plyr", unload=TRUE)
   summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1))
 
+save(observed_stat, file = "R_files/observed_stats.RData")
+
 #randomize and calculate the same statistic
 #shuffle all wind speed values within each year, then recalc the statistic within each stratum
 
 permutations <- 1000
 
 #prep cluster
-mycl <- makeCluster(detectCores() - 3)
+mycl <- makeCluster(detectCores() - 2, setup_strategy = "sequential")
 clusterExport(mycl, c("permutations", "ann_30")) 
 
 clusterEvalQ(mycl, {
@@ -114,11 +116,10 @@ a <- Sys.time()
 rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
   
   #rnd_stat <- lapply(1:permutations, function(x){
-  =
   ann_30 %>% 
-    group_by(common_name,year) %>% 
+    group_by(group,year) %>% 
     mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
-    group_by(common_name,year,stratum) %>% 
+    group_by(group,year,stratum) %>% 
     arrange(desc(used), .by_group = TRUE) %>%
     summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1)) %>% 
     mutate(perm = x)
@@ -127,17 +128,19 @@ rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){
   reduce(rbind) %>% 
   as.data.frame()
 
-Sys.time() - a # 6.626293 mins
+Sys.time() - a # 2.61326 hours (1000 perms)
 
 stopCluster(mycl)
 
-save(rnd_stat, file = "R_files/rnd_stats_100_perm_df.RData")
+#save(rnd_stat, file = "R_files/rnd_stats_1000_perm_df.RData")
 
+load("R_files/observed_stats.RData")
+load("R_files/rnd_stats_1000_perm_df.RData")
 
 #extract observed and random values for each stratum
 
 #prep cluster
-mycl <- makeCluster(detectCores() - 3)
+mycl <- makeCluster(detectCores() - 7, setup_strategy = "sequential")
 clusterExport(mycl, c("permutations", "observed_stat", "rnd_stat")) 
 
 clusterEvalQ(mycl, {
@@ -159,12 +162,12 @@ p_vals <- parLapply(mycl, unique(observed_stat$stratum), function(x){
   reduce(rbind)
   
 
-Sys.time() - a # 56.95044 mins
+Sys.time() - a # 9.972578 hours
 
 stopCluster(mycl)
 
 
-save(p_vals, file = "R_files/p_vals_100_perm_df.RData")
+save(p_vals, file = "R_files/p_vals_1000_perm_df.RData")
 
 
 
