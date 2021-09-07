@@ -20,7 +20,7 @@ setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
-
+  
 
 ann_30 <- ann_30 %>%  
   mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
