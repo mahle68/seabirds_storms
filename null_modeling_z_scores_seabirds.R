@@ -1,7 +1,11 @@
 #script for null modeling of seabird data
-#May 11. 2021. Elham Nourani, PhD. Radolfzell, DE.
+#Sep. 7. 2021. Elham Nourani, PhD. Konstanz, DE.
 #update: Jun 7. 2021: make sure to separate the colonies for species from multiple colonies.
 #https://www.jwilber.me/permutationtest/#:~:text=To%20calculate%20the%20p%2Dvalue,of%20test%2Dstatistics%20we%20calculated
+#using z-scores as the test statistic instead of the difference between max wind and used wind.
+#it is possible to calculate z scores for non-normally distributed data. 
+#https://www.daylight.com/meetings/emug97/Bradshaw/Significant_Similarity/Z-scores.html
+#https://www.statisticshowto.com/probability-and-statistics/z-score/
 
 
 library(tidyverse)
@@ -13,15 +17,9 @@ library(hrbrthemes)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
-
-#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
-#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
-#source("/home/mahle68/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
-
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
   
-
 ann_30 <- ann_30 %>%  
   mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
   as.data.frame()
@@ -85,22 +83,24 @@ data_var <- ann_30 %>%
 
 # Step 2: permutation test- In each stratum, is the difference between selected and max available wind speed higher/lower than expected by chance? ####
 
-#for each stratum, calculate the difference between observed wind speed and max wind speed (incl. observed)
+#for each stratum, calculate the z score for the used wind speed (to find the distance of the used point from the mean)
 
-#ann_30 <- ann_30 %>% 
-#dplyr::select(c(30,2,17,14,3:13,15,16,18:29,31:ncol(ann_30))) 
-
-observed_stat <- ann_30 %>% 
+observed_zs <- ann_30 %>% 
   group_by(group, year, stratum) %>% #group by species-colony instead of just species
   arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached  detach("package:plyr", unload=TRUE)
-  summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1))
+  summarize(mean_wspd = mean(wind_speed), sd_wspd = sd(wind_speed), max_wspd = max(wind_speed), min_wspd = min(wind_speed), 
+            obs_wspd = head(wind_speed,1)) %>% 
+  mutate(z_obs = (obs_wspd - mean_wspd)/sd_wspd) %>% 
+  ungroup() %>% 
+  as.data.frame()
+  
 
-save(observed_stat, file = "R_files/observed_stats.RData")
+save(observed_zs, file = "R_files/observed_zs.RData")
 
 #randomize and calculate the same statistic
 #shuffle all wind speed values within each year, then recalc the statistic within each stratum
 
-permutations <- 1000
+permutations <- 100
 
 #prep cluster
 mycl <- makeCluster(detectCores() - 2, setup_strategy = "sequential")
@@ -113,72 +113,73 @@ clusterEvalQ(mycl, {
 
 a <- Sys.time()
 
-rnd_stat <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
+rnd_zs <- parLapply(cl = mycl, X = c(1:permutations), fun = function(x){ 
   
   #rnd_stat <- lapply(1:permutations, function(x){
   ann_30 %>% 
     group_by(group,year) %>% 
-    mutate(wind_speed = sample(wind_speed, replace = F)) %>% 
+    mutate(wind_speed = sample(wind_speed, replace = F)) %>% #shuffle the wind speed values
     group_by(group,year,stratum) %>% 
-    arrange(desc(used), .by_group = TRUE) %>%
-    summarize(max_minus_obs = max(wind_speed) - head(wind_speed,1)) %>% 
-    mutate(perm = x)
+    arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached  detach("package:plyr", unload=TRUE)
+    summarize(mean_wspd = mean(wind_speed), sd_wspd = sd(wind_speed), max_wspd = max(wind_speed), min_wspd = min(wind_speed), 
+              obs_wspd = head(wind_speed,1)) %>% 
+    mutate(z_rnd = (obs_wspd - mean_wspd)/sd_wspd) %>% 
+    ungroup() %>% 
+    as.data.frame()
   
 }) %>% 
   reduce(rbind) %>% 
   as.data.frame()
 
-Sys.time() - a # 2.61326 hours (1000 perms)
+Sys.time() - a # 5.7 min (100 perms)
 
 stopCluster(mycl)
 
-#save(rnd_stat, file = "R_files/rnd_stats_1000_perm_df.RData")
+save(rnd_zs, file = "R_files/rnd_zs_100_perm_df.RData")
 
-load("R_files/observed_stats.RData")
-load("R_files/rnd_stats_1000_perm_df.RData")
+load("R_files/observed_zs.RData")
+load("R_files/rnd_zs_100_perm_df.RData")
 
 #extract observed and random values for each stratum
 
 #prep cluster
-mycl <- makeCluster(detectCores() - 7, setup_strategy = "sequential")
-clusterExport(mycl, c("permutations", "observed_stat", "rnd_stat")) 
+mycl <- makeCluster(detectCores() - 3, setup_strategy = "sequential")
+clusterExport(mycl, c("permutations", "observed_zs", "rnd_zs")) 
 
 clusterEvalQ(mycl, {
   library(dplyr)
 })
 
 
-a <- Sys.time()
+(a <- Sys.time())
 
 p_vals <- parLapply(mycl, unique(observed_stat$stratum), function(x){
-  obs <- observed_stat[observed_stat$stratum == x,]
-  rnd <- rnd_stat[rnd_stat$stratum == x,]
+  obs <- observed_zs[observed_zs$stratum == x,]
+  rnd <- rnd_zs[rnd_zs$stratum == x,]
   
-  obs$p_less <- sum(rnd$max_minus_obs <= obs$max_minus_obs)/permutations
-  obs$p_more <- sum(rnd$max_minus_obs >= obs$max_minus_obs)/permutations
+  obs$p <- sum(rnd$z_rnd <= obs$z_obs)/permutations
   
   obs
+  
 }) %>% 
   reduce(rbind)
   
 
-Sys.time() - a # 9.972578 hours
+Sys.time() - a #1.340673
 
 stopCluster(mycl)
 
 
-save(p_vals, file = "R_files/p_vals_1000_perm_df.RData")
-
-
+save(p_vals, file = "R_files/p_vals_z_100_perm_df.RData")
 
 #Step 2.1: plot and conclusions #####
-load("R_files/p_vals_1000_perm_df.RData") #p_vals
+load("R_files/p_vals_z_100_perm_df.RData") #p_vals
 
 p_vals$year_f <- as.character(p_vals$year)
 
 #one plot per species, one curve per year
 ggplot(p_vals) +
-  stat_density(aes(x = p_more, group = year_f, color = year_f), adjust = 1.3,
+  stat_density(aes(x = p, group = year_f, color = year_f), adjust = 1.3,
                geom = "line", position = "identity", size = 0.55, alpha = 0.7) +
   xlab("P-value") + 
   ylab("Density") +
@@ -188,7 +189,7 @@ ggplot(p_vals) +
 
 #all species in one plot
 ggplot(p_vals) +
-  stat_density(aes(x = p_more, group = group, color = group), adjust = 1.3,
+  stat_density(aes(x = p, group = group, color = group), adjust = 1.3,
                geom = "line", position = "identity", size = 0.55, alpha = 0.8) +
   xlab("P-value") + 
   ylab("Density") +
