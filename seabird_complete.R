@@ -37,6 +37,9 @@ data_var <- ann_30 %>%
   ungroup() %>% 
   as.data.frame()
 
+save(data_var, file = "R_files/data_var.RData")
+
+
 #plot
 ggplot(data_var, aes(x = wspd_cov, y = group)) + 
   geom_density_ridges(scale = 3, alpha = 0.5) + 
@@ -58,7 +61,7 @@ CoV_bar <- ggplot(data_var, aes(x = wspd_cov, y = reorder(as.factor(species), de
   theme_minimal()
 
 
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/Cov_bar.png", width = 5, height = 5, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/Cov_bar.png", width = 5, height = 5, units = "in", res = 300)
 print(CoV_bar)
 dev.off()
 
@@ -346,3 +349,69 @@ bubble(spdata, "resid", col = c("blue","orange"))
 
 #To Do:
 #pool the two colonies for RFB and MF. add great shearwater
+
+### STEP 7: LM: wind variability ------------------------------------ #####
+
+load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
+load("R_files/data_var.RData") #data_var
+
+lm_input <- lm_input %>% 
+  mutate(group = paste(species, colony.name, sep = "_"))
+
+str_var <- data_var %>% 
+  group_by(group) %>% 
+  summarize(max_str_cov = max(wspd_cov)) %>% 
+  full_join(lm_input, by = "group") %>% 
+  as.data.frame()
+  
+  
+
+
+lm_var <- lm(max_str_cov ~ wing.loading..Nm.2. + wing.area..m2., data = str_var)
+
+m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #0.3199 
+
+m2 <- lm(max_str_cov ~  wing.area..m2., data = str_var) #0.1668 
+
+m3 <- lm(max_str_cov ~  aspect.ratio, data = str_var) #0.2779 
+
+m4 <- lm(max_str_cov ~  PC1, data = str_var) #0.375  
+
+m5 <- lm(max_str_cov ~ body.mass..kg., data = str_var) # 0.2462 
+
+ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
+  geom_point() +
+  #stat_summary(fun.data = mean_cl_normal) + 
+  geom_smooth(method='lm', formula= y~x, se = T) +
+  theme_minimal()
+
+### STEP 8: Plot linear models in one device ------------------------------------ #####
+
+plot(x = c(30,140), y = c(2,140), type = "n", xlab = "", ylab = "")
+
+max_col <- "corn flower blue" #"#69b3a2"
+var_col <- "goldenrod"  # "#c7909d"
+
+
+X11(width = 6, height = 5)
+lm_result <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
+  geom_smooth(aes(y = max_wind), method = "lm", color = max_col, alpha = .2, fill = max_col) +
+  geom_smooth(aes(y = max_str_cov), method = "lm", color = var_col, alpha = .2, fill = var_col) +
+  geom_point(aes(y = max_wind), color = max_col, alpha = .6) +
+  geom_point(aes(y = max_str_cov), color = var_col, alpha = .6) +
+  labs(x = "Wind loading") +
+  scale_y_continuous(
+    name = "Maximum wind speed (m/s)",# Features of the first axis
+    sec.axis = sec_axis(~ . + 10,name = "Variation in wind speed (%)")) + # Add a second axis and specify its features
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(color = max_col, size=13),
+        axis.title.y.right = element_text(color = var_col, size=13)) 
+
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output.png", width = 6, height = 5, units = "in", res = 300)
+print(lm_result)
+dev.off()
+
+
+
+
