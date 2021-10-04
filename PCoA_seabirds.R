@@ -128,8 +128,8 @@ save(wind_br, file = "R_files/wind_br_18spp.RData")
 ## STEP 3: linear modeling ####
 
 #------------------ prep input data 
-load("R_files/wind_br_18spp.RData")
-load("R_files/data_morph_PCs.RData")
+load("R_files/wind_br_18spp.RData") #wind_br
+load("R_files/data_morph_PCs.RData") #data_pca
 
 #add wind and morphology variables
 lm_input <- wind_br %>% 

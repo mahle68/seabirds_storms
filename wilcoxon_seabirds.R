@@ -56,7 +56,7 @@ wilcox_p <- ann_30 %>%
   filter(stratum %in% over20$stratum) %>% 
   group_by(group, year, stratum) %>% #group by species-colony instead of just species
   arrange(desc(used), .by_group = TRUE) %>% #make sure plyr is detached  detach("package:plyr", unload=TRUE)
-  mutate(p = wilcox.test(tail(wind_speed,29), mu = head(wind_speed,1), alternative = "two.sided")$p.value, #try a two sided version
+  mutate(p = wilcox.test(tail(wind_speed,29), mu = head(wind_speed,1), alternative = "less")$p.value, #try a two sided version
          observed_wspd = head(wind_speed,1), median_wspd = median(tail(wind_speed,29))) %>% #exclude observed wind from the group
   ungroup() %>% 
   as.data.frame()
