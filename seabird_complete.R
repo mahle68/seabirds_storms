@@ -413,5 +413,53 @@ print(lm_result)
 dev.off()
 
 
+### STEP 9: Plot relationship between wind speed and latitude ------------------------------------ #####
+
+
+#open dataset with alternative steps for hourly steps. prepped in random_steps.R
+load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
+
+observed <- ann_30 %>%  
+  filter(used == 1) %>% 
+  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
+  as.data.frame()
+
+#extract latitudinal ranges for each group
+lat_ranges <- observed %>% 
+  group_by(group) %>% 
+  summarize(min_lat = min(location.lat),
+            max_lat = max(location.lat),
+            colony.name = head(colony.name,1),
+            species = head(common_name,1)) #timestamp? 
+
+Pal <- colorRampPalette(c( "darkslategray1", "darkgoldenrod1","lightpink1")) 
+Cols <- paste0(Pal(20), "80")
+#Cols <- palette(rainbow(20))
+
+#plot
+plot(observed$location.lat, observed$wind_speed, pch = 20, col = "gray")
+
+for (i in 1:nrow(lat_ranges)){
+  rect(xleft = lat_ranges[i,"min_lat"], ybottom = min(observed$wind_speed), xright = lat_ranges[i,"max_lat"], ytop = max(observed$wind_speed), 
+       col = Cols[i], border = NA)
+}
+
+
+plot(observed$wind_speed, observed$location.lat, pch = 20, col = "gray")
+
+for (i in 1:nrow(lat_ranges)){
+  rect(xleft =  min(observed$wind_speed), ybottom =lat_ranges[i,"min_lat"], xright = max(observed$wind_speed), ytop =lat_ranges[i,"max_lat"] , 
+       col = Cols[i], border = NA)
+}
+
+plot(observed$wind_speed, observed$location.lat, pch = 20, cex = 0.1, col = "orange")
+
+for (i in 1:nrow(lat_ranges)){
+  rect(xleft =  min(observed$wind_speed), ybottom =lat_ranges[i,"min_lat"], xright = max(observed$wind_speed), ytop =lat_ranges[i,"max_lat"] , 
+       col = alpha("grey",0.1), border = NA)
+}
+
+points(observed$wind_speed, observed$location.lat, pch = 20, cex = 0.1, col = "orange")
+
 
 
