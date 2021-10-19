@@ -8,8 +8,17 @@ library(hrbrthemes)
 library(ggridges)
 library(corrr)
 library(sp)
+library(sf)
+library(mapview)
+library(lubridate)
+library(reticulate)
+library(ncdf4)
+#install.packages('devtools')
+#devtools::install_github('mpio-be/windR')
+library(windR)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
+wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 ### STEP 1: Open and prep SSF data ------------------------------------ #####
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
@@ -200,6 +209,8 @@ sig_data <- ann_30 %>%
 sig_data$common_name <- reorder(sig_data$common_name, sig_data$species)
 sig_data$stratum <- reorder(as.factor(sig_data$stratum),desc(sig_data$species))
 
+save(sig_data, file = "R_files/sig_data.RData")
+
 #plot
 used_wind <- sig_data %>% 
   group_by(stratum) %>% 
@@ -231,11 +242,77 @@ sig_plots <- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
         legend.title = element_blank())
 
 
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/sig_plots.png", width = 7, height = 4, units = "in", res = 300)
-print(sig_plots)
-dev.off()
+ 
 
-### STEP 5: Raw wind plots ------------------------------------ #####
+### STEP 5: Plot wind fields for wind avoidance steps ------------------- #####
+
+load("R_files/sig_data.RData") #sig_data
+
+#extract date and time of the rare events
+rare_times <- ann_30 %>%
+  filter(used == 1 & TripID %in% sig_data$TripID) %>% 
+  group_by(TripID) %>% 
+  summarize(yr = head(year,1),
+            min_t = min(timestamp),
+            max_t = max(timestamp)) %>% 
+  ungroup() %>% 
+  as.data.frame()
+
+#extract the whole trips that contain rare event steps and extract extents
+rare_trips <- ann_30 %>%
+  filter(used == 1 & TripID %in% sig_data$TripID) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs)
+ 
+extents <- lapply(split(rare_trips, rare_trips$TripID), function(x) st_bbox(x))
+
+#download era-5 data for the time periods (of entire tracks)
+#import the python library ecmwfapi
+path <- "/home/enourani/.local/lib/python2.7/site-packages/"
+cdsapi <- import_from_path("cdsapi", path = path)
+
+server = cdsapi$Client()
+
+
+output_path <- "/home/enourani/Documents/ERA_5_seabirds/"
+
+lapply(c(2:length(extents)), function(zone){
+  
+  x <- extents[[zone]]+1
+  yr <- as.character(rare_times[zone,"yr"])
+  if(month(rare_times[zone, "min_t"]) == month(rare_times[zone, "max_t"])){
+    mn <- as.character(month(rare_times[zone, "min_t"]))
+  } else {
+    mn <- c(as.character(month(rare_times[zone, "min_t"])), as.character(month(rare_times[zone, "max_t"])))
+  }
+  
+  for(mn in mn){ #for each month
+  
+  query <- r_to_py(list(
+    product_type = "reanalysis",
+    area =  c(x[4], x[1], x[2], x[3]),     # North, West, South, East.
+    #grid = c(0.25, 0.25), 
+    format = "netcdf",
+    variable = c("10m_u_component_of_wind", "10m_v_component_of_wind", "surface_pressure"),
+    year = yr,
+    month = mn, #"01", #c(str_pad(seq(1:9),2,"left","0"),"10","11","12"),
+    day = str_pad(1:31,2,"left","0"),
+    time = str_c(seq(0,23,1),"00",sep=":") %>% str_pad(5,"left","0"), #every hour
+    dataset = "reanalysis-era5-single-levels"
+  ))
+  
+  server$retrieve("reanalysis-era5-single-levels",
+                  query,
+                  target = paste0(output_path,"wind_", names(extents)[[zone]], "_", yr, "_", mn, ".nc")) 
+  }
+  
+})
+
+
+#extract date from netcdf files
+
+
+
+### STEP 6: Raw wind plots ------------------------------------ #####
 
 #open annotated data and species data
 load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
@@ -269,14 +346,26 @@ ann <- ann %>%
 #   theme_minimal() +
 #   theme(legend.position = "none") 
 
+#with max
+X11(width = 8, height = 7)
+raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group)) + 
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 1, alpha = 0.7) +
+  #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
+  scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
+  scale_x_continuous(limits = c(0, 50)) +
+  labs(y = "", x = "Wind speed (m/s)") +
+  theme_minimal() #+
+theme(legend.position = "bottom")
+
 #with quartiles
 X11(width = 8, height = 7)
 raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group, fill = factor(stat(quantile)))) + 
   stat_density_ridges(
     geom = "density_ridges_gradient", calc_ecdf = TRUE,
-    quantiles = 4, quantile_lines = F, scale = 3,
+    quantiles = 10, quantile_lines = F, scale = 3,
   ) +
-  scale_fill_viridis_d(name = "Quartiles", alpha = 0.6) +
+  #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
+  scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
   scale_x_continuous(limits = c(0, 25)) +
   labs(y = "", x = "Wind speed (m/s)") +
   theme_minimal() #+
@@ -286,7 +375,7 @@ png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/ra
 print(raw_wind)
 dev.off()
 
-### STEP 6: LM: wind strength ------------------------------------ #####
+### STEP 7: LM: wind strength ------------------------------------ #####
 
 load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
 
@@ -350,7 +439,7 @@ bubble(spdata, "resid", col = c("blue","orange"))
 #To Do:
 #pool the two colonies for RFB and MF. add great shearwater
 
-### STEP 7: LM: wind variability ------------------------------------ #####
+### STEP 8: LM: wind variability ------------------------------------ #####
 
 load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
 load("R_files/data_var.RData") #data_var
@@ -363,6 +452,8 @@ str_var <- data_var %>%
   summarize(max_str_cov = max(wspd_cov)) %>% 
   full_join(lm_input, by = "group") %>% 
   as.data.frame()
+
+save(str_var, file = "R_files/str_var.RData")
   
   
 
@@ -385,9 +476,22 @@ ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
   geom_smooth(method='lm', formula= y~x, se = T) +
   theme_minimal()
 
-### STEP 8: Plot linear models in one device ------------------------------------ #####
+### STEP 9: Plot linear models in one device ------------------------------------ #####
+
+load("R_files/str_var.RData")
+
+m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
+#https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
+
+#create new data for plotting
+newx <- seq(min(str_var$wing.loading..Nm.2., na.rm = T), max(str_var$wing.loading..Nm.2., na.rm = T), by = 0.05)
+conf_interval <- predict(m1, newdata = data.frame(wing.loading..Nm.2.= newx), interval = "confidence",
+                         level = 0.95)
 
 plot(x = c(30,140), y = c(2,140), type = "n", xlab = "", ylab = "")
+
+abline(m1,col = max_col)
+matlines(conf_interval[-6,1], conf_interval[-6,2:3], col = "blue", lty = 2) #row 6 has NAs
 
 max_col <- "corn flower blue" #"#69b3a2"
 var_col <- "goldenrod"  # "#c7909d"
@@ -413,7 +517,7 @@ print(lm_result)
 dev.off()
 
 
-### STEP 9: Plot relationship between wind speed and latitude ------------------------------------ #####
+### STEP 10: Plot relationship between wind speed and latitude ------------------------------------ #####
 
 
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
