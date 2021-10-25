@@ -388,6 +388,12 @@ data_list <- parLapply(cl = mycl, file_list,function(x){
 
 stopCluster(mycl)
 
+################## focus on atlantic yellow-nosed
+ayl <- sig_data %>% 
+  filter(common_name == "Atlantic Yellow-nosed Albatross") %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs)
+
+
 
 
 
