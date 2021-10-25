@@ -15,10 +15,23 @@ library(reticulate)
 library(ncdf4)
 #install.packages('devtools')
 #devtools::install_github('mpio-be/windR')
-library(windR)
+#library(windR)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
+
+ggplotRegression <- function (fit) {
+  
+  require(ggplot2)
+  
+  ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
+    geom_point() +
+    stat_smooth(method = "lm", col = "red") +
+    labs(title = paste("Adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
+                       "Intercept =",signif(fit$coef[[1]],5 ),
+                       " Slope =",signif(fit$coef[[2]], 5),
+                       " P =",signif(summary(fit)$coef[2,4], 5)))
+}
 
 ### STEP 1: Open and prep SSF data ------------------------------------ #####
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
@@ -272,10 +285,9 @@ cdsapi <- import_from_path("cdsapi", path = path)
 
 server = cdsapi$Client()
 
-
 output_path <- "/home/enourani/Documents/ERA_5_seabirds/"
 
-lapply(c(2:length(extents)), function(zone){
+lapply(c(1:length(extents)), function(zone){
   
   x <- extents[[zone]]+1
   yr <- as.character(rare_times[zone,"yr"])
@@ -309,23 +321,100 @@ lapply(c(2:length(extents)), function(zone){
 
 
 #extract date from netcdf files
+setwd("/home/enourani/Documents/ERA_5_seabirds/")
+
+vname <- c("u10","v10")
+file_list <- list.files(pattern = ".nc",full.names = TRUE)
+
+#start the cluster
+mycl <- makeCluster(detectCores() - 2)
+
+clusterExport(mycl, list("vname","file_list")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  
+  library(ncdf4)
+  library(lubridate)
+  library(tidyverse)
+})
+
+
+data_list <- parLapply(cl = mycl, file_list,function(x){
+  
+  nc <- nc_open(x)
+  
+  #extract lon and lat
+  lat <- ncvar_get(nc,'latitude')
+  nlat <- dim(lat) 
+  lon <- ncvar_get(nc,'longitude')
+  nlon <- dim(lon) 
+  
+  #extract the time
+  t <- ncvar_get(nc, "time")
+  nt <- dim(t)
+  
+  #convert the hours into date + hour
+  timestamp <- as_datetime(c(t*60*60),origin = "1900-01-01")
+  
+  #put everything in a large df
+  row_names <- expand.grid(lon,lat,timestamp)
+  
+  var_df <- data.frame(cbind(
+    row_names,
+    matrix(as.vector(ncvar_get(nc,vname[1])), nrow = nlon * nlat * nt, ncol = 1), #array to vector to matrix
+    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)))
+  
+  colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
+  
+  #remove points over land (NAs)
+  
+  land_df <- var_df %>%
+    na.omit() %>%
+    mutate(delta_t = sst - t2m,
+           yday = yday(date_time),
+           hour = hour(date_time),
+           year = year(date_time),
+           region = str_sub(strsplit(x, "/")[[1]][2],start = 6,end = -12)) %>%
+    data.frame()
+  
+  sample <- land_df %>% 
+    sample_n(5000, replace = F)
+  
+  save(sample,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",
+                            str_sub(strsplit(x, "/")[[1]][2],end = -4),".RData"))
+  gc()
+  gc()
+})
+
+stopCluster(mycl)
+
 
 
 
 ### STEP 6: Raw wind plots ------------------------------------ #####
 
 #open annotated data and species data
+load("R_files/lm_input_20spp_col.RData") #lm_input 
 load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
-species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv") %>% 
-  filter(scientific.name %in% c( "Ardenna gravis", "Diomedea dabbenena", "Diomedea exulans", "Fregata magnificens", "Fregata minor", "Morus bassanus", "Morus capensis", "Phaethon lepturus", "Phaethon rubricauda", 
-                                 "Phoebastria irrorata", "Phoebetria fusca", "Procellaria cinerea", "Pterodroma incerta", "Pterodroma mollis",  "Sula dactylatra", "Sula granti",  "Sula sula", "Thalassarche chlororhynchos"))
+#species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv") %>% 
+#  filter(scientific.name %in% c( "Ardenna gravis", "Diomedea dabbenena", "Diomedea exulans", "Fregata magnificens", "Fregata minor", "Morus bassanus", "Morus capensis", "Phaethon lepturus", "Phaethon rubricauda", 
+#                                 "Phoebastria irrorata", "Phoebetria fusca", "Procellaria cinerea", "Pterodroma incerta", "Pterodroma mollis",  "Sula dactylatra", "Sula granti",  "Sula sula", "Thalassarche chlororhynchos"))
 
 ann <- ann %>%  
-  left_join(species[,c(1,2)], by = c("sci_name" = "scientific.name")) %>% 
+  left_join(lm_input[,c(1,2,9:13)], by = "sci_name") %>% 
   mutate(group = paste(species, colony.name, sep = "_")) %>% 
+  mutate(group_f = as.factor(reorder(group, wing.loading..Nm.2.)))
   as.data.frame()
 
+summ <- ann %>% 
+  group_by(group_f) %>% 
+  summarize(min_wind = min(wind_speed_ms, na.rm = T),
+            max_wind = max(wind_speed_ms, na.rm = T)) %>% 
+  as.data.frame()
+  
+  
 #plot
+#https://www.datanovia.com/en/blog/elegant-visualization-of-density-distribution-in-r-using-ridgeline/
 
 # ggplot(ann, aes(x = wind_speed_ms, y = group)) + 
 #   geom_density_ridges(scale = 3, alpha = 0.4) +
@@ -335,43 +424,64 @@ ann <- ann %>%
 #   theme_minimal() +
 #   theme(legend.position = "none") 
 
-#with mean
-# ggplot(ann, aes(x = wind_speed_ms, y = group)) + 
+#with median
+# ggplot(ann, aes(x = wind_speed_ms, y = group_f)) +
 #   stat_density_ridges(
-#     geom = "density_ridges_gradient", calc_ecdf = TRUE, 
+#     geom = "density_ridges_gradient", calc_ecdf = TRUE,
 #     scale = 3, alpha = 0.4,
 #     quantiles = 0.5, quantile_lines = TRUE) +
 #   scale_x_continuous(limits = c(0, 25)) +
 #   labs(y = "", x = "Wind speed (m/s)") +
 #   theme_minimal() +
-#   theme(legend.position = "none") 
+#   theme(legend.position = "none")
+# 
+# #with max
+# ggplot(ann, aes(x = wind_speed_ms, y = group_f)) +
+#   stat_density_ridges(
+#     geom = "density_ridges_gradient", calc_ecdf = TRUE,
+#     scale = 3, alpha = 0.4,
+#     quantiles = 1, quantile_lines = TRUE) +
+#   scale_x_continuous(limits = c(0, 25)) +
+#   labs(y = "", x = "Wind speed (m/s)") +
+#   theme_minimal() +
+#   theme(legend.position = "none")
 
-#with max
+
+# X11(width = 8, height = 7)
+# raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f)) + 
+#   stat_density_ridges(quantile_lines = TRUE, quantiles = 1, alpha = 0.7) +
+#   #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
+#   scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
+#   scale_x_continuous(limits = c(0, 50)) +
+#   labs(y = "", x = "Wind speed (m/s)") +
+#   theme_minimal() #+
+# theme(legend.position = "bottom")
+
+
+
+#with quantiles
 X11(width = 8, height = 7)
-raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group)) + 
-  stat_density_ridges(quantile_lines = TRUE, quantiles = 1, alpha = 0.7) +
-  #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
-  scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
-  scale_x_continuous(limits = c(0, 50)) +
-  labs(y = "", x = "Wind speed (m/s)") +
-  theme_minimal() #+
-theme(legend.position = "bottom")
+  raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = factor(stat(quantile)))) + 
+    stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
+                        point_shape = "|", point_size = 1, point_alpha = 0.7, size = 0.25,
+      geom = "density_ridges_gradient", calc_ecdf = TRUE,
+      quantiles = 10, quantile_lines = F, scale = 3) +
+    scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
+    scale_x_continuous(limits = c(0, 25)) +
+    labs(y = "", x = "Wind speed (m/s)") +
+    theme_minimal() #+  
+  theme(legend.position = "bottom") 
 
-#with quartiles
-X11(width = 8, height = 7)
-raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group, fill = factor(stat(quantile)))) + 
-  stat_density_ridges(
-    geom = "density_ridges_gradient", calc_ecdf = TRUE,
-    quantiles = 10, quantile_lines = F, scale = 3,
-  ) +
-  #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
-  scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
-  scale_x_continuous(limits = c(0, 25)) +
-  labs(y = "", x = "Wind speed (m/s)") +
-  theme_minimal() #+
-theme(legend.position = "bottom") 
-
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind.png", width = 8, height = 7, units = "in", res = 300)
+# #no color
+#   raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f)) + 
+#     geom_density_ridges(fill = NA, jittered_points = TRUE, rel_min_height = .01,
+#       point_shape = "|", point_size = 1, size = 0.25, point_alpha = 0.5,
+#       position = position_points_jitter(height = 0), scale = 3, alpha = 0.2) +
+#     scale_x_continuous(limits = c(0, 25)) +
+#     labs(y = "", x = "Wind speed (m/s)") +
+#     theme_minimal() 
+  
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter.png", width = 8, height = 8, units = "in", res = 300)
 print(raw_wind)
 dev.off()
 
@@ -480,23 +590,35 @@ ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
 
 load("R_files/str_var.RData")
 
-m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
-#https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
-
-#create new data for plotting
-newx <- seq(min(str_var$wing.loading..Nm.2., na.rm = T), max(str_var$wing.loading..Nm.2., na.rm = T), by = 0.05)
-conf_interval <- predict(m1, newdata = data.frame(wing.loading..Nm.2.= newx), interval = "confidence",
-                         level = 0.95)
-
-plot(x = c(30,140), y = c(2,140), type = "n", xlab = "", ylab = "")
-
-abline(m1,col = max_col)
-matlines(conf_interval[-6,1], conf_interval[-6,2:3], col = "blue", lty = 2) #row 6 has NAs
+# m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
+# #https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
+# 
+# #create new data for plotting
+# newx <- seq(min(str_var$wing.loading..Nm.2., na.rm = T), max(str_var$wing.loading..Nm.2., na.rm = T), by = 0.05)
+# conf_interval <- predict(m1, newdata = data.frame(wing.loading..Nm.2.= newx), interval = "confidence",
+#                          level = 0.95)
+# 
+# plot(x = c(30,140), y = c(2,140), type = "n", xlab = "", ylab = "")
+# 
+# abline(m1,col = max_col)
+# matlines(conf_interval[-6,1], conf_interval[-6,2:3], col = "blue", lty = 2) #row 6 has NAs
 
 max_col <- "corn flower blue" #"#69b3a2"
 var_col <- "goldenrod"  # "#c7909d"
 
+#
 
+m1 <- lm(max_wind ~ wing.loading..Nm.2., data = str_var) #0.3199 
+
+ggplotRegression(m1)
+
+ggplot(str_var, aes(wing.loading..Nm.2., max_str_cov))+
+  geom_point() +
+  # Add the line using the fortified fit data, plotting the x vs. the fitted values
+  geom_line(data = fortify(m1), aes(x = wing.loading..Nm.2., y = .fitted))
+
+
+#####
 X11(width = 6, height = 5)
 lm_result <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   geom_smooth(aes(y = max_wind), method = "lm", color = max_col, alpha = .2, fill = max_col) +

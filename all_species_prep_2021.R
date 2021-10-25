@@ -217,6 +217,11 @@ gannets <- cg %>%
   ungroup() %>% 
   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
 
+##summary data for Martina's cost of transport project (22.10.2021)
+summary_data <- gannets %>%  group_by(year(timestamp), colony.name) %>%  distinct(BirdId)
+
+write.csv(summary_data, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/David Gremillet/gannet_summary_info.csv")
+
 #remove duplicated timestamps
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets$TrackId),timestamps = gannets$timestamp,
                                                         sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
