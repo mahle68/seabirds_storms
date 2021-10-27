@@ -13,11 +13,14 @@ library(mapview)
 library(lubridate)
 library(reticulate)
 library(ncdf4)
+library(oce)
+#library(gganimate)
 #install.packages('devtools')
 #devtools::install_github('mpio-be/windR')
 #library(windR)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 ggplotRegression <- function (fit) {
@@ -261,85 +264,70 @@ sig_plots <- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
 
 load("R_files/sig_data.RData") #sig_data
 
-#extract date and time of the rare events
-rare_times <- ann_30 %>%
-  filter(used == 1 & TripID %in% sig_data$TripID) %>% 
-  group_by(TripID) %>% 
-  summarize(yr = head(year,1),
-            min_t = min(timestamp),
-            max_t = max(timestamp)) %>% 
-  ungroup() %>% 
-  as.data.frame()
+#focus on Atlantic yellow-nosed albatross first
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 
-#extract the whole trips that contain rare event steps and extract extents
-rare_trips <- ann_30 %>%
-  filter(used == 1 & TripID %in% sig_data$TripID) %>% 
+ayl <- PR_data_split %>% 
+  filter(common_name == "Atlantic Yellow-nosed Albatross", TripID == sig_data[sig_data$common_name == "Atlantic Yellow-nosed Albatross", "TripID"]) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs)
- 
-extents <- lapply(split(rare_trips, rare_trips$TripID), function(x) st_bbox(x))
 
-#download era-5 data for the time periods (of entire tracks)
+sig_data$stratum <-as.character(sig_data$stratum)
+
+avoidance_hour <- sig_data %>% 
+  filter(species == "Atlantic Yellow-nosed Albatross") %>% 
+  rowwise() %>% 
+  mutate(unique_hour = paste(yday(timestamp), hour(timestamp), sep = "_"))
+
+
+#extract the whole trips (not only steps that were retained in the step selection dataset) that contain rare event steps and extract extents
+# rare_trips <- ann_30 %>%
+#   filter(used == 1 & TripID %in% sig_data$TripID) %>% 
+#   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs)
+ 
+#--------------------request data download -----
+
+#only for month and dates corresponding with the trip
+
 #import the python library ecmwfapi
 path <- "/home/enourani/.local/lib/python2.7/site-packages/"
 cdsapi <- import_from_path("cdsapi", path = path)
 
 server = cdsapi$Client()
 
-output_path <- "/home/enourani/Documents/ERA_5_seabirds/"
+output_path <- "/home/enourani/Documents/ERA_5_seabirds/ayl/"
 
-lapply(c(1:length(extents)), function(zone){
+datetimes <- list("11" = str_pad(17:30,2,"left","0"),
+                 "12" = str_pad(1:3,2,"left","0"))
   
-  x <- extents[[zone]]+1
-  yr <- as.character(rare_times[zone,"yr"])
-  if(month(rare_times[zone, "min_t"]) == month(rare_times[zone, "max_t"])){
-    mn <- as.character(month(rare_times[zone, "min_t"]))
-  } else {
-    mn <- c(as.character(month(rare_times[zone, "min_t"])), as.character(month(rare_times[zone, "max_t"])))
-  }
+lapply(c(1:length(datetimes)), function(x){
   
-  for(mn in mn){ #for each month
+  month <- names(datetimes)[[x]]
+  days <- datetimes[[x]]
+    
+    request <- r_to_py(list(
+      product_type = "reanalysis",
+      variable = c("10m_u_component_of_wind", "10m_v_component_of_wind", "significant_height_of_combined_wind_waves_and_swell", "surface_pressure"),
+      year = "2014",
+      month = month,
+      day = days,
+      time = str_c(seq(0,23,1),"00",sep=":") %>% str_pad(5,"left","0"),
+      area = c(-25, -62, -51, 11),
+      format = "netcdf",
+      dataset_short_name = "reanalysis-era5-single-levels"
+    ))
   
-  query <- r_to_py(list(
-    product_type = "reanalysis",
-    area =  c(x[4], x[1], x[2], x[3]),     # North, West, South, East.
-    #grid = c(0.25, 0.25), 
-    format = "netcdf",
-    variable = c("10m_u_component_of_wind", "10m_v_component_of_wind", "surface_pressure"),
-    year = yr,
-    month = mn, #"01", #c(str_pad(seq(1:9),2,"left","0"),"10","11","12"),
-    day = str_pad(1:31,2,"left","0"),
-    time = str_c(seq(0,23,1),"00",sep=":") %>% str_pad(5,"left","0"), #every hour
-    dataset = "reanalysis-era5-single-levels"
-  ))
-  
-  server$retrieve("reanalysis-era5-single-levels",
-                  query,
-                  target = paste0(output_path,"wind_", names(extents)[[zone]], "_", yr, "_", mn, ".nc")) 
-  }
-  
+    server$retrieve("reanalysis-era5-single-levels",
+                    request,
+                    target = paste0(output_path,"wind_2014_", month, ".nc")) 
 })
 
+#--------------------extract date from netcdf files -----
+setwd("/home/enourani/Documents/ERA_5_seabirds/ayl/")
 
-#extract date from netcdf files
-setwd("/home/enourani/Documents/ERA_5_seabirds/")
-
-vname <- c("u10","v10")
 file_list <- list.files(pattern = ".nc",full.names = TRUE)
+vname <- c("u10","v10", "swh", "sp")
 
-#start the cluster
-mycl <- makeCluster(detectCores() - 2)
-
-clusterExport(mycl, list("vname","file_list")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  
-  library(ncdf4)
-  library(lubridate)
-  library(tidyverse)
-})
-
-
-data_list <- parLapply(cl = mycl, file_list,function(x){
+data_list <- lapply(file_list,function(x){
   
   nc <- nc_open(x)
   
@@ -362,39 +350,177 @@ data_list <- parLapply(cl = mycl, file_list,function(x){
   var_df <- data.frame(cbind(
     row_names,
     matrix(as.vector(ncvar_get(nc,vname[1])), nrow = nlon * nlat * nt, ncol = 1), #array to vector to matrix
-    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)))
+    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1),
+    matrix(as.vector(ncvar_get(nc,vname[3])), nrow = nlon * nlat * nt, ncol = 1),
+    matrix(as.vector(ncvar_get(nc,vname[4])), nrow = nlon * nlat * nt, ncol = 1)))
   
   colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
   
   #remove points over land (NAs)
   
-  land_df <- var_df %>%
-    na.omit() %>%
-    mutate(delta_t = sst - t2m,
-           yday = yday(date_time),
+  df <- var_df %>%
+    #na.omit() %>% #let's keep points over land as well. otherwise, points where significant wave height is NA, i.e. land, will be deleted
+    mutate(yday = yday(date_time),
            hour = hour(date_time),
-           year = year(date_time),
-           region = str_sub(strsplit(x, "/")[[1]][2],start = 6,end = -12)) %>%
+           year = year(date_time)) %>%
     data.frame()
   
-  sample <- land_df %>% 
-    sample_n(5000, replace = F)
-  
-  save(sample,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",
-                            str_sub(strsplit(x, "/")[[1]][2],end = -4),".RData"))
-  gc()
-  gc()
+  save(df,file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/atlantic_yellow_nosed_albatross_",head(month(df$date_time),1), ".RData"))
 })
 
-stopCluster(mycl)
+#--------------------append the two files -----
 
-################## focus on atlantic yellow-nosed
-ayl <- sig_data %>% 
-  filter(common_name == "Atlantic Yellow-nosed Albatross") %>% 
-  st_as_sf(coords = c("location.long","location.lat"), crs = wgs)
+file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/",".RData",full.names = TRUE)
+
+data_df <- sapply(file_ls, function(x) mget(load(x)), simplify = TRUE) %>%
+  reduce(rbind)
+
+save(data_df, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms/atlanitc_yellow_nosed_raw_wind.RData")
+
+#--------------------PLOT!!! -----
+#https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms/atlanitc_yellow_nosed_raw_wind.RData") #data_df
+
+data_df <- data_df %>% 
+  mutate(wind_speed = sqrt(u10^2 + v10^2)) #m/s  
+  
+
+ayl <- PR_data_split %>% 
+  filter(common_name == "Atlantic Yellow-nosed Albatross", 
+         TripID == sig_data[sig_data$common_name == "Atlantic Yellow-nosed Albatross", "TripID"]) %>% 
+  rowwise() %>% 
+  mutate(unique_hour = paste(yday(timestamp), hour(timestamp), sep = "_")) %>% 
+  mutate(avoidance = ifelse(unique_hour %in% avoidance_hour$unique_hour, "avoided", "not_avoided"))
+
+region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+  st_crop(xmin = -62, xmax = 11, ymin = -51, ymax = -25) %>%
+  st_union()
+
+#example map: aggregate to lower spatial resolution
+
+wind_lres <- data_df %>% 
+  mutate(lat_lres = round(lat),
+         lon_lres = round(lon)) %>% 
+  group_by(date_time,lat_lres,lon_lres) %>% 
+  summarise(u10 = mean(u10, na.rm = T),
+            v10 = mean(v10, na.rm = T),
+            sp = mean(sp, na.rm = T),
+            swh = mean(swh, na.rm = T),
+            wind_speed = mean(wind_speed),
+            yday = head(yday,1),
+            hour = head(hour,1)) %>% 
+  rename(lat = lat_lres,
+         lon = lon_lres) %>% 
+  mutate(unique_hour = paste(yday,hour, sep = "_"))
+  
+save(wind_lres, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms/atlanitc_yellow_nosed_raw_wind_lres.RData")
+
+# 
+# wind_day <- data_df %>% 
+#   group_by(lon, lat, yday) %>% 
+#   summarise(u10 = median(u10, na.rm = TRUE),
+#             v10 = median(v10, na.rm = TRUE), 
+#             wind_speed = median(wind_speed, na.rm = TRUE))
+
+
+for(i in unique(ayl$unique_hour)){
+  
+  plot <- ggplot() +
+    geom_raster(data = wind_lres %>% filter(unique_hour == i), aes(x = lon, y = lat, fill = wind_speed))+
+    geom_segment(data = wind_lres %>% filter(unique_hour == i), 
+                 aes(x = lon, xend = lon+u10/10, y = lat, 
+                     yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+    geom_sf(data = region, fill = "grey85", col = 1)+
+    geom_point(data = ayl %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat), 
+               size = 1, colour = "red") +
+    coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
+    scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                         na.value = "white", name = "Speed\n (m/s)")+
+    theme_bw()+
+    theme(axis.text = element_text(size = 12, colour = 1),
+          legend.text = element_text(size = 10, colour = 1), 
+          legend.title = element_text(size = 12, colour = 1),
+          legend.position = c(0.08,0.23),
+          legend.background = element_rect(colour = 1, fill = "white"))+
+    labs(x = NULL, y = NULL, title = wind_lres %>%  filter(unique_hour == i) %>% .$date_time %>% .[1])
+  
+  ggsave(plot = plot, filename = paste0("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/wind_field_",i,".jpeg"), 
+         height = 6, width = 12, dpi = 300)
+  
+}
+
+
+#animate
+wind_fields =  ggplot() +
+  geom_raster(data = wind_lres, aes(x = lon, y = lat, fill = wind_speed))+
+  geom_segment(data = wind_lres, aes(x = lon, xend = lon+u10/10, y = lat, 
+                   yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+  geom_sf(data = region, fill = "grey85", col = 1)+
+  #eom_point(data = ayl %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat), 
+  #           size = 1, colour = "red") +
+  coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
+  scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                       na.value = "white", name = "Speed\n (m/s)")+
+  theme_bw()+
+  theme(axis.text = element_text(size = 14, colour = 1),
+        legend.text = element_text(size = 14, colour = 1), 
+        legend.title = element_text(size = 14, colour = 1),
+        legend.position = c(.12,.17),
+        legend.background = element_rect(colour = 1, fill = "white"))+
+  labs(x = NULL, y = NULL, title = "Date : {frame_time}") +
+  transition_time(date_time) +
+  ease_aes("linear")
 
 
 
+wind.vector = ggplot() +
+  geom_raster(data = data_df, aes(x = lon, y = lat, fill = wind_speed))+
+  geom_segment(data = data_df, 
+               aes(x = lon, xend = lon+u10/60, y = lat, 
+                   yend = lat+v10/60), arrow = arrow(length = unit(0.1, "cm")))+
+  geom_sf(data = region, fill = "grey85", col = 1)+
+  coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
+  scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,12), 
+                       na.value = "white", name = "Speed\n (m/s)")+
+  scale_x_continuous(breaks = c(38.8,40))+
+  theme_bw()+
+  theme(axis.text = element_text(size = 14, colour = 1),
+        legend.text = element_text(size = 14, colour = 1), 
+        legend.title = element_text(size = 14, colour = 1),
+        legend.position = c(.12,.17),
+        legend.background = element_rect(colour = 1, fill = "white"))+
+  labs(x = NULL, y = NULL, title = "Month of : {frame_time}")+
+  transition_time(hour) +
+  ease_aes("linear")
+
+animate(wind.vector)
+
+
+
+##using wouter's code
+for(i in 1:length(unique(winddata$date))){
+  t.ss <- subset(winddata, date == unique(winddata$date)[i])
+  m.ss <- subset(dats, date == unique(winddata$date)[i])
+  
+  scaler <- 0.3
+  p <- ggplot() + borders("world",colour='grey70',fill='grey70',countries='FALSE') +
+    geom_path(data=m.ss,aes(x=long,y=lat,group=dev),size=1,col='red')+
+    geom_segment(data= t.ss, aes(x=long, y=lat, xend=long+uw*scaler, yend=lat+vw*scaler),size=.6,
+                 arrow=arrow(length=unit(0.1,"cm"))) +
+    theme_bw() + coord_fixed(xlim = longlimits, ylim = latlimits,ratio=1) +
+    theme(legend.position = 'right',
+          legend.direction= 'vertical',
+          panel.border	= element_rect(colour='white'),
+          panel.grid.major	= element_line(colour='grey50',linetype='dashed'),
+          panel.grid.minor	= element_line(colour='grey70',linetype='dashed'),
+          strip.background	= element_rect(fill='white',colour='NA'),
+          strip.text		= element_text(size=10,face='bold'),
+          axis.text		= element_text(size=10,face='italic'),
+          axis.title		= element_text(size=11))
+  
+  ggsave(plot=p,filename=as.character(paste("WindField",m.ss$date[i],m.ss$dev[i],".jpeg",sep="_")),height=6,width=6,dpi=300)
+}
 
 
 ### STEP 6: Raw wind plots ------------------------------------ #####
