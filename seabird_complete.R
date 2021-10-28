@@ -14,6 +14,7 @@ library(lubridate)
 library(reticulate)
 library(ncdf4)
 library(oce)
+library(gridExtra)
 #library(gganimate)
 #install.packages('devtools')
 #devtools::install_github('mpio-be/windR')
@@ -112,7 +113,7 @@ permutations <- 1000
 mycl <- makeCluster(detectCores() - 2, setup_strategy = "sequential")
 clusterExport(mycl, c("permutations", "ann_30")) 
 
-clusterEvalQ(mycl, {
+clusterEvalQ( %>% , {
   library(dplyr)
 })
 
@@ -264,7 +265,7 @@ sig_plots <- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
 
 load("R_files/sig_data.RData") #sig_data
 
-#focus on Atlantic yellow-nosed albatross first
+#focus on Atlantic yellow-nosed albatross first. For the other species, see wind_fields.R
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 
 ayl <- PR_data_split %>% 
@@ -380,7 +381,7 @@ save(data_df, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/
 #--------------------PLOT!!! -----
 #https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
 
-load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms/atlanitc_yellow_nosed_raw_wind.RData") #data_df
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/atlanitc_yellow_nosed_raw_wind.RData") #data_df
 
 data_df <- data_df %>% 
   mutate(wind_speed = sqrt(u10^2 + v10^2)) #m/s  
@@ -414,7 +415,7 @@ wind_lres <- data_df %>%
          lon = lon_lres) %>% 
   mutate(unique_hour = paste(yday,hour, sep = "_"))
   
-save(wind_lres, file = "/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms/atlanitc_yellow_nosed_raw_wind_lres.RData")
+save(wind_lres, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/atlanitc_yellow_nosed_raw_wind_lres.RData")
 
 # 
 # wind_day <- data_df %>% 
@@ -535,7 +536,7 @@ load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
 ann <- ann %>%  
   left_join(lm_input[,c(1,2,9:13)], by = "sci_name") %>% 
   mutate(group = paste(species, colony.name, sep = "_")) %>% 
-  mutate(group_f = as.factor(reorder(group, wing.loading..Nm.2.)))
+  mutate(group_f = as.factor(reorder(group, desc(wing.loading..Nm.2.))))
   as.data.frame()
 
 summ <- ann %>% 
@@ -548,48 +549,8 @@ summ <- ann %>%
 #plot
 #https://www.datanovia.com/en/blog/elegant-visualization-of-density-distribution-in-r-using-ridgeline/
 
-# ggplot(ann, aes(x = wind_speed_ms, y = group)) + 
-#   geom_density_ridges(scale = 3, alpha = 0.4) +
-#   scale_x_continuous(limits = c(0, 25)) +
-# 
-#   labs(y = "Density", x = "Wind speed (m/s)") +
-#   theme_minimal() +
-#   theme(legend.position = "none") 
-
-#with median
-# ggplot(ann, aes(x = wind_speed_ms, y = group_f)) +
-#   stat_density_ridges(
-#     geom = "density_ridges_gradient", calc_ecdf = TRUE,
-#     scale = 3, alpha = 0.4,
-#     quantiles = 0.5, quantile_lines = TRUE) +
-#   scale_x_continuous(limits = c(0, 25)) +
-#   labs(y = "", x = "Wind speed (m/s)") +
-#   theme_minimal() +
-#   theme(legend.position = "none")
-# 
-# #with max
-# ggplot(ann, aes(x = wind_speed_ms, y = group_f)) +
-#   stat_density_ridges(
-#     geom = "density_ridges_gradient", calc_ecdf = TRUE,
-#     scale = 3, alpha = 0.4,
-#     quantiles = 1, quantile_lines = TRUE) +
-#   scale_x_continuous(limits = c(0, 25)) +
-#   labs(y = "", x = "Wind speed (m/s)") +
-#   theme_minimal() +
-#   theme(legend.position = "none")
-
-
-# X11(width = 8, height = 7)
-# raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f)) + 
-#   stat_density_ridges(quantile_lines = TRUE, quantiles = 1, alpha = 0.7) +
-#   #scale_fill_grey(name = "Quantiles", alpha = 0.6) +
-#   scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
-#   scale_x_continuous(limits = c(0, 50)) +
-#   labs(y = "", x = "Wind speed (m/s)") +
-#   theme_minimal() #+
-# theme(legend.position = "bottom")
-
-
+#remove great shearwater for now. we dont know the wing loading
+ann <- ann[ann$species != "Great Shearwater",]
 
 #with quantiles
 X11(width = 8, height = 7)
@@ -603,17 +564,8 @@ X11(width = 8, height = 7)
     labs(y = "", x = "Wind speed (m/s)") +
     theme_minimal() #+  
   theme(legend.position = "bottom") 
-
-# #no color
-#   raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f)) + 
-#     geom_density_ridges(fill = NA, jittered_points = TRUE, rel_min_height = .01,
-#       point_shape = "|", point_size = 1, size = 0.25, point_alpha = 0.5,
-#       position = position_points_jitter(height = 0), scale = 3, alpha = 0.2) +
-#     scale_x_continuous(limits = c(0, 25)) +
-#     labs(y = "", x = "Wind speed (m/s)") +
-#     theme_minimal() 
   
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter.png", width = 8, height = 8, units = "in", res = 300)
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc.png", width = 8, height = 8, units = "in", res = 300)
 print(raw_wind)
 dev.off()
 
@@ -624,7 +576,8 @@ load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sen
 lm_input <- lm_input %>% 
   mutate_at(c("colony.long","colony.lat", "wing.loading..Nm.2.", "wing.span..m.", "wing.area..m2.","aspect.ratio", "PC1", "PC2"),
             list(z = ~as.numeric(scale(.)))) %>% 
-  mutate(breeding_ch = as.character(median_breeding_m)) %>% 
+  mutate(breeding_ch = as.character(median_breeding_m),
+         max_wind_ms = max_wind/3.6) %>% 
   arrange(median_breeding_yday) #order temporally, for temporal authocorrelation analysis.
 
 lm_input %>% 
@@ -637,20 +590,20 @@ lm_input %>%
 #modeling
 
 #plot the relationship
-ggplot(lm_input,aes(wing.loading..Nm.2., max_wind)) +
+ggplot(lm_input,aes(wing.loading..Nm.2., max_wind_ms)) +
   geom_point() +
   #stat_summary(fun.data = mean_cl_normal) + 
   geom_smooth(method='lm', formula= y~x, se = T) +
   theme_minimal()
 
-ggplot(lm_input,aes(wing.area..m2., max_wind)) +
+ggplot(lm_input,aes(wing.area..m2., max_wind_ms)) +
   geom_point() +
   #stat_summary(fun.data = mean_cl_normal) + 
   geom_smooth(method='lm', formula= y~x, se = T) +
   theme_minimal()
 
 #model
-morph <- lm(max_wind ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2898, AIC =  161.2964
+morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2898, AIC =  161.2964
 #morph2 <- lm(max_wind ~ wing.loading..Nm.2._z + wing.area..m2._z, data = lm_input) #0.3096 , AIC = 161.6079
 
 #investigate residuals
@@ -722,6 +675,9 @@ ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
 
 load("R_files/str_var.RData")
 
+str_var <- str_var %>% 
+  mutate(max_wind_ms = max_wind/3.6)
+
 # m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
 # #https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
 # 
@@ -740,7 +696,7 @@ var_col <- "goldenrod"  # "#c7909d"
 
 #
 
-m1 <- lm(max_wind ~ wing.loading..Nm.2., data = str_var) #0.3199 
+m1 <- lm(max_wind_ms ~ wing.loading..Nm.2., data = str_var) #0.3199 
 
 ggplotRegression(m1)
 
@@ -751,23 +707,32 @@ ggplot(str_var, aes(wing.loading..Nm.2., max_str_cov))+
 
 
 #####
-X11(width = 6, height = 5)
-lm_result <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_wind), method = "lm", color = max_col, alpha = .2, fill = max_col) +
+X11(width = 12, height = 5)
+lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = max_col, alpha = .2, fill = max_col) +
+  geom_point(aes(y = max_wind_ms), color = max_col, alpha = .6) +
+  labs(x = "Wind loading") +
+  scale_y_continuous(
+    name = "Maximum wind speed (m/s)") +
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(size=13))
+
+lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   geom_smooth(aes(y = max_str_cov), method = "lm", color = var_col, alpha = .2, fill = var_col) +
-  geom_point(aes(y = max_wind), color = max_col, alpha = .6) +
   geom_point(aes(y = max_str_cov), color = var_col, alpha = .6) +
   labs(x = "Wind loading") +
   scale_y_continuous(
-    name = "Maximum wind speed (m/s)",# Features of the first axis
-    sec.axis = sec_axis(~ . + 10,name = "Variation in wind speed (%)")) + # Add a second axis and specify its features
+    name = "Variation in wind speed (%)") +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(color = max_col, size=13),
-        axis.title.y.right = element_text(color = var_col, size=13)) 
+  theme(axis.title.y = element_text(size=13))
+
+ grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
 
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output.png", width = 6, height = 5, units = "in", res = 300)
-print(lm_result)
+
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels.png", 
+    width = 12, height = 5, units = "in", res = 300)
+grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
 dev.off()
 
 

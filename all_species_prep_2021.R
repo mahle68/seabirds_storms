@@ -68,7 +68,6 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
-
 species <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/final_datasets.csv")
 
 
