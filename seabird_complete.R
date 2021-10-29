@@ -113,7 +113,7 @@ permutations <- 1000
 mycl <- makeCluster(detectCores() - 2, setup_strategy = "sequential")
 clusterExport(mycl, c("permutations", "ann_30")) 
 
-clusterEvalQ( %>% , {
+clusterEvalQ(mycl, {
   library(dplyr)
 })
 

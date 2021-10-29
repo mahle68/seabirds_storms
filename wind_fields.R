@@ -183,7 +183,6 @@ stopCluster(mycl)
 
 #extract trip names
 
-
 for (i in trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripID){ #remove atlantic yellow nosed
   file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/",i,full.names = TRUE)
   
@@ -202,11 +201,11 @@ world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/con
   st_union()
 
 
-lapply(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripID %>%  as.list(), function(x){
+lapply(c(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripID), function(x){
   
-  file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/",x,full.names = TRUE)
+  files <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/", x, full.names = TRUE)
   
-  wind_df <- sapply(file_ls, function(x) mget(load(x)), simplify = TRUE) %>%
+  wind_df <- sapply(files, function(x) mget(load(x)), simplify = TRUE) %>%
     reduce(rbind) %>% 
     mutate(wind_speed = sqrt(u10^2 + v10^2), #m/s 
            unique_hour = paste(yday, hour, sep = "_"))
@@ -223,6 +222,13 @@ lapply(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripI
     st_crop(xmin = min(wind_df$lon), xmax = max(wind_df$lon), ymin = min(wind_df$lat), ymax = max(wind_df$lat))
     
     
+  dir.create(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/", 
+                            head(trip$sci_name,1),"_", x, "/"))
+  
+  path <- paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/", 
+                            head(trip$sci_name,1),"_", x, "/")
+  
+    
   for(i in unique(trip$unique_hour)){
     
     plot <- ggplot() +
@@ -232,7 +238,10 @@ lapply(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripI
                        yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
       geom_sf(data = region, fill = "grey85", col = 1)+
       geom_point(data = trip %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat), 
-                 size = 1, colour = "red") +
+                            size = 1, colour = "red") +
+      #geom_point(data = trip %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat, colour = as.factor(avoidance)), 
+      #           size = 1) +
+      #scale_color_manual(values = c("avoided" = "red", "not_avoided" = "forestgreen")) +
       coord_sf(xlim = range(wind_df$lon), ylim =  range(wind_df$lat))+
       scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
                            na.value = "white", name = "Speed\n (m/s)")+
@@ -242,14 +251,12 @@ lapply(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$TripI
             legend.title = element_text(size = 12, colour = 1),
             legend.position = c(0.08,0.23),
             legend.background = element_rect(colour = 1, fill = "white"))+
-      labs(x = NULL, y = NULL, title = wind_df %>%  filter(unique_hour == i) %>% .$date_time %>% .[1])
+      labs(x = NULL, y = NULL, title = wind_df %>%  filter(unique_hour == i) %>% .$date_time %>% .[1] %>% paste(head(trip$sci_name,1), x))
     
-    ggsave(plot = plot, filename = paste0("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/wind_field_",i,".jpeg"), 
+    ggsave(plot = plot, filename = paste0(path, x,"_",i,".jpeg"), 
            height = 6, width = 12, dpi = 300)
     
   }
-  
-  
 })
 
 
