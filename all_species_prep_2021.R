@@ -185,7 +185,7 @@ save(data_breeding, file = "R_files/mv_nbsample_w_colony.RData") #naza booby is 
 
 
 # Peter Ryan data prep ######
-#peter ryan data from Sophie. These are all breeding, I believe
+#peter ryan data from Sophie. These are all breeding
 
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 PR_data_split <- PR_data_split %>% 
@@ -257,7 +257,7 @@ save(gannets_15min, file = "R_files/gannets_15min.RData")
 # step 2: put everything together ######
 
 #open data #
-load("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData") #waal; called waal
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/waal_all.RData") #waal; called waal
 
 RFB <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/RFBO_2012_ParamWind.csv", 
                 stringsAsFactors = F) %>% 
