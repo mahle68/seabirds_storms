@@ -5,6 +5,11 @@
 
 library(tidyverse)
 library(lubridate)
+library(sf)
+library(raster)
+library(cowplot)
+library(rcartocolor)
+library(mapview)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
@@ -18,6 +23,8 @@ load("R_files/all_spp_df_colony_waal.RData") #data_df_all
 #extract entire trips for significant steps
 trips_df <- data_df_all %>% 
   filter(sci_name %in% sig_data$sci_name & TripID %in% sig_data$TripID)
+
+save(trips_df, file = "R_files/trips_df_for_windfields.RData")
 
 trips_sf <- data_df_all %>% 
   filter(sci_name %in% sig_data$sci_name & TripID %in% sig_data$TripID) %>% 
@@ -194,7 +201,7 @@ for (i in trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$Tr
 }
 
 
-#--------------------PLOT!!! -----
+#--------------------PLOT entire trips!!! -----
 #https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
 
 world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
@@ -215,10 +222,18 @@ lapply(c(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$Tri
   trip <- trips_df %>% 
     filter(TripID == x) %>% 
     mutate(unique_hour = paste(yday(timestamp), hour(timestamp), sep = "_")) %>% 
-    mutate(avoidance = ifelse(unique_hour %in% avoidance_hour$unique_hour, "avoided", "not_avoided")) %>% 
+    #mutate(avoidance = ifelse(unique_hour %in% avoidance_hour$unique_hour, "avoided", "not_avoided")) %>% 
     group_by(unique_hour) %>% 
     slice(1) #hourly filter
 
+  #save the entire trip data
+  save(trip, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", 
+                            head(trip$sci_name,1),"_", x, "_whole_trip.RData"))
+  
+  #save wind data for entire trip
+  save(wind_df, file = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", 
+                           head(trip$sci_name,1),"_", x, "_whole_trip_wind.RData"))
+  
   region <- world %>% 
     st_crop(xmin = min(wind_df$lon), xmax = max(wind_df$lon), ymin = min(wind_df$lat), ymax = max(wind_df$lat))
     
@@ -259,8 +274,6 @@ lapply(c(trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$Tri
     
   }
 })
-
-
 
 
 
@@ -332,3 +345,97 @@ for(i in unique(ayl$unique_hour)){
   
 }
 
+#--------------------PLOT for manuscript -----
+
+world <- shapefile("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") 
+world <- crop(world, extent(c(-140,140,-90,90))) %>% 
+  st_as_sf(crs = wgs) %>% 
+  st_union() %>% 
+  st_cast("POLYGON")
+
+#extract the avoidance points
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/atlanitc_yellow_nosed_raw_wind_lres.RData") #wind_lres
+ayn <- wind_lres %>% 
+  mutate(unique_hour = paste(yday,hour, sep = "_")) %>% 
+  filter(unique_hour == "326_23")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Phoebetria fusca_77884_1_whole_trip.RData") #trip
+sooty <- trip %>% 
+  filter(unique_hour == "326_9")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Phoebetria fusca_77884_1_whole_trip_wind.RData") #wind_df
+sooty_wind <- wind_df %>% 
+  filter(unique_hour == "326_9")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Diomedea exulans_2010_24_whole_trip.RData") #trip
+wanderer1 <- trip %>% 
+  filter(unique_hour == "32_14")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Diomedea exulans_2010_24_whole_trip_wind.RData") #wind_df
+wanderer1_wind <- wind_df %>% 
+  filter(unique_hour == "32_14")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Diomedea exulans_XGPS2015_2016_CRO_106_3_1.csv_whole_trip.RData") #trip
+wanderer2 <- trip  %>% 
+  filter(unique_hour == "48_3")
+
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Diomedea exulans_XGPS2015_2016_CRO_106_3_1.csv_whole_trip_wind.RData") #trip
+wanderer2_wind <- wind_df %>% 
+  filter(unique_hour == "48_3")
+
+region <- world %>% 
+  st_crop(xmin = 25, xmax = 80, ymin = -70, ymax = -35.5)  
+
+region_df <- data.frame(location.)
+
+#create main map
+main_map <- ggplot() +
+  geom_raster(data = wanderer2_wind, aes(x = lon, y = lat, fill = wind_speed))+
+  geom_segment(data = wanderer2_wind, 
+               aes(x = lon, xend = lon+u10/10, y = lat, 
+                   yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+  geom_sf(data = world, fill = "grey85", col = 1)+
+  geom_point(data = wanderer2, aes(x = location.long, y = location.lat), 
+             size = 2, colour = "red") +
+  #geom_point(data = trip %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat, colour = as.factor(avoidance)), 
+  #           size = 1) +
+  #scale_color_manual(values = c("avoided" = "red", "not_avoided" = "forestgreen")) +
+  
+  
+
+
+#create inset map 
+inset_map <- ggplot() +
+  geom_sf(data = world, fill = "grey85") +
+  geom_sf(data = st_as_sfc(st_bbox(region)), fill = NA, color = "black", size = 1) +
+  theme_void()
+  
+
+
+ortho = "+proj=ortho +lat_0=-78 +lon_0=166 +x_0=0 +y_0=0 +a=6371000 +b=6371000 +units=m +no_defs"
+
+library(rnaturalearth)
+
+world <- ne_countries(scale = 'small', returnclass = 'sf')
+
+ggplot() + 
+  # geom_sf(data=circle, fill = 'aliceblue') + # the globe "horizon" - you can ignore
+  geom_sf(data=world) + # the visible continents
+  coord_sf(crs = ortho) +
+  theme(
+    panel.grid.major = element_line(
+      color = gray(.5), linetype = 'dashed', size = 0.5),
+    panel.ontop = TRUE,
+    panel.background = element_rect(fill = NA)
+  )
+coord_sf(xlim = st_bbox(region)[c(1,3)], ylim =  st_bbox(region)[c(2,4)])+
+  scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                       na.value = "white", name = "Speed\n (m/s)")+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12, colour = 1),
+        legend.text = element_text(size = 10, colour = 1), 
+        legend.title = element_text(size = 12, colour = 1),
+        legend.position = c(0.08,0.23),
+        legend.background = element_rect(colour = 1, fill = "white"))+
+  labs(x = NULL, y = NULL)#, title = wanderer2_wind %>% .$date_time %>% .[1] %>% paste(head(trip$sci_name,1), x))
