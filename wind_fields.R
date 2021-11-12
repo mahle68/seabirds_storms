@@ -387,7 +387,7 @@ wanderer2_wind <- wind_df %>%
 region <- world %>% 
   st_crop(xmin = 25, xmax = 80, ymin = -70, ymax = -35.5)  
 
-region_df <- data.frame(location.)
+
 
 #create main map
 main_map <- ggplot() +
@@ -411,7 +411,8 @@ inset_map <- ggplot() +
   geom_sf(data = st_as_sfc(st_bbox(region)), fill = NA, color = "black", size = 1) +
   theme_void()
   
-
+region_df <- data.frame(X = c(),
+                        Y = c())
 
 ortho = "+proj=ortho +lat_0=-78 +lon_0=166 +x_0=0 +y_0=0 +a=6371000 +b=6371000 +units=m +no_defs"
 
