@@ -384,13 +384,17 @@ load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_
 wanderer2_wind <- wind_df %>% 
   filter(unique_hour == "48_3")
 
-region <- world %>% 
+
+
+
+
+### WANDERER2 #####
+
+region_w2 <- world %>% 
   st_crop(xmin = 25, xmax = 80, ymin = -70, ymax = -35.5)  
 
-
-
 #create main map
-main_map <- ggplot() +
+plot_w2 <- ggplot() +
   geom_raster(data = wanderer2_wind, aes(x = lon, y = lat, fill = wind_speed))+
   geom_segment(data = wanderer2_wind, 
                aes(x = lon, xend = lon+u10/10, y = lat, 
@@ -398,39 +402,8 @@ main_map <- ggplot() +
   geom_sf(data = world, fill = "grey85", col = 1)+
   geom_point(data = wanderer2, aes(x = location.long, y = location.lat), 
              size = 2, colour = "red") +
-  #geom_point(data = trip %>%  filter(unique_hour == i), aes(x = location.long, y = location.lat, colour = as.factor(avoidance)), 
-  #           size = 1) +
-  #scale_color_manual(values = c("avoided" = "red", "not_avoided" = "forestgreen")) +
-  
-  
-
-
-#create inset map 
-inset_map <- ggplot() +
-  geom_sf(data = world, fill = "grey85") +
-  geom_sf(data = st_as_sfc(st_bbox(region)), fill = NA, color = "black", size = 1) +
-  theme_void()
-  
-region_df <- data.frame(X = c(),
-                        Y = c())
-
-ortho = "+proj=ortho +lat_0=-78 +lon_0=166 +x_0=0 +y_0=0 +a=6371000 +b=6371000 +units=m +no_defs"
-
-library(rnaturalearth)
-
-world <- ne_countries(scale = 'small', returnclass = 'sf')
-
-ggplot() + 
-  # geom_sf(data=circle, fill = 'aliceblue') + # the globe "horizon" - you can ignore
-  geom_sf(data=world) + # the visible continents
-  coord_sf(crs = ortho) +
-  theme(
-    panel.grid.major = element_line(
-      color = gray(.5), linetype = 'dashed', size = 0.5),
-    panel.ontop = TRUE,
-    panel.background = element_rect(fill = NA)
-  )
-coord_sf(xlim = st_bbox(region)[c(1,3)], ylim =  st_bbox(region)[c(2,4)])+
+  #coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
+  coord_sf(xlim = st_bbox(region_w2)[c(1,3)], ylim = st_bbox(region_w2)[c(2,4)])+
   scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
                        na.value = "white", name = "Speed\n (m/s)")+
   theme_bw()+
@@ -439,4 +412,119 @@ coord_sf(xlim = st_bbox(region)[c(1,3)], ylim =  st_bbox(region)[c(2,4)])+
         legend.title = element_text(size = 12, colour = 1),
         legend.position = c(0.08,0.23),
         legend.background = element_rect(colour = 1, fill = "white"))+
-  labs(x = NULL, y = NULL)#, title = wanderer2_wind %>% .$date_time %>% .[1] %>% paste(head(trip$sci_name,1), x))
+  labs(x = NULL, y = NULL, title = wanderer2$sci_name)
+
+#create inset map
+worldmap_w2 <- ggplot() + 
+  geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
+  geom_polygon(data = region_df, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+  coord_map("ortho", orientation = c(wanderer2$location.lat+37, wanderer2$location.long, 0)) +
+  scale_y_continuous(breaks = (-2:2) * 30) +
+  scale_x_continuous(breaks = (-4:4) * 45) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        panel.background = element_rect(fill = "white")) +
+  labs(x = NULL, y = NULL)
+worldmap_w2
+
+
+final_w2 <- ggdraw() +
+  draw_plot(plot_w2) +
+  draw_plot(worldmap_w2, x = 0.69, y = 0.70, width = 0.25, height = 0.25)
+
+final_w2
+
+### WANDERER1 #####
+
+region_w1 <- world %>% 
+  st_crop(xmin = 27, xmax = 73, ymin = -52, ymax = -27)  
+region_df_w1 <- data.frame(x = c(st_bbox(region_w1)[1],st_bbox(region_w1)[3],st_bbox(region_w1)[3],st_bbox(region_w1)[1]),
+                        y = c(st_bbox(region_w1)[2],st_bbox(region_w1)[2],st_bbox(region_w1)[4],st_bbox(region_w1)[4]))
+
+#create main map
+plot_w1 <- ggplot() +
+  geom_raster(data = wanderer1_wind, aes(x = lon, y = lat, fill = wind_speed))+
+  geom_segment(data = wanderer1_wind, 
+               aes(x = lon, xend = lon+u10/10, y = lat, 
+                   yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+  geom_sf(data = world, fill = "grey85", col = 1)+
+  geom_point(data = wanderer1, aes(x = location.long, y = location.lat), 
+             size = 2, colour = "red") +
+  #coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
+  coord_sf(xlim = st_bbox(region_w1)[c(1,3)], ylim = st_bbox(region_w1)[c(2,4)])+
+  scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                       na.value = "white", name = "Speed\n (m/s)")+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12, colour = 1),
+        legend.text = element_text(size = 10, colour = 1), 
+        legend.title = element_text(size = 12, colour = 1),
+        legend.position = c(0.08,0.23),
+        legend.background = element_rect(colour = 1, fill = "white"))+
+  labs(x = NULL, y = NULL, title = wanderer1$sci_name)
+
+#create inset map
+worldmap_w1 <- ggplot() + 
+  geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
+  geom_polygon(data = region_df_w1, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+  coord_map("ortho", orientation = c(wanderer1$location.lat+25, wanderer1$location.long, 0)) +
+  scale_y_continuous(breaks = (-2:2) * 30) +
+  scale_x_continuous(breaks = (-4:4) * 45) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        panel.background = element_rect(fill = "white")) +
+  labs(x = NULL, y = NULL)
+worldmap_w1
+
+
+final_w1 = ggdraw() +
+  draw_plot(plot_w1) +
+  draw_plot(worldmap_w1, x = 0.765, y = 0.64, width = 0.25, height = 0.25)
+
+final_w1
+
+### SOOTY #####
+
+region_s1 <- world %>% 
+  st_crop(xmin = -37, xmax = 9, ymin = -57, ymax = -33)  
+region_df_s1 <- data.frame(x = c(st_bbox(region_s1)[1],st_bbox(region_s1)[3],st_bbox(region_s1)[3],st_bbox(region_s1)[1]),
+                           y = c(st_bbox(region_s1)[2],st_bbox(region_s1)[2],st_bbox(region_s1)[4],st_bbox(region_s1)[4]))
+
+#create main map
+plot_s1 <- ggplot() +
+  geom_raster(data = sooty_wind, aes(x = lon, y = lat, fill = wind_speed))+
+  geom_segment(data = sooty_wind, 
+               aes(x = lon, xend = lon+u10/10, y = lat, 
+                   yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+  geom_sf(data = world, fill = "grey85", col = 1)+
+  geom_point(data = sooty, aes(x = location.long, y = location.lat), 
+             size = 2, colour = "red") +
+  coord_sf(xlim = st_bbox(region_s1)[c(1,3)], ylim = st_bbox(region_s1)[c(2,4)])+
+  scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                       na.value = "white", name = "Speed\n (m/s)")+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12, colour = 1),
+        legend.text = element_text(size = 10, colour = 1), 
+        legend.title = element_text(size = 12, colour = 1),
+        legend.position = c(0.08,0.23),
+        legend.background = element_rect(colour = 1, fill = "white"))+
+  labs(x = NULL, y = NULL, title = sooty$sci_name)
+
+#create inset map
+worldmap_s1 <- ggplot() + 
+  geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
+  geom_polygon(data = region_df_s1, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+  coord_map("ortho", orientation = c(sooty$location.lat+25, sooty$location.long, 0)) +
+  scale_y_continuous(breaks = (-2:2) * 30) +
+  scale_x_continuous(breaks = (-4:4) * 45) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        panel.background = element_rect(fill = "white")) +
+  labs(x = NULL, y = NULL)
+worldmap_s1
+
+
+final_s1 = ggdraw() +
+  draw_plot(plot_s1) +
+  draw_plot(worldmap_s1, x = 0.765, y = 0.64, width = 0.25, height = 0.25)
+
+final_s1
