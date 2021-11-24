@@ -499,29 +499,7 @@ animate(wind.vector)
 
 
 
-##using wouter's code
-for(i in 1:length(unique(winddata$date))){
-  t.ss <- subset(winddata, date == unique(winddata$date)[i])
-  m.ss <- subset(dats, date == unique(winddata$date)[i])
-  
-  scaler <- 0.3
-  p <- ggplot() + borders("world",colour='grey70',fill='grey70',countries='FALSE') +
-    geom_path(data=m.ss,aes(x=long,y=lat,group=dev),size=1,col='red')+
-    geom_segment(data= t.ss, aes(x=long, y=lat, xend=long+uw*scaler, yend=lat+vw*scaler),size=.6,
-                 arrow=arrow(length=unit(0.1,"cm"))) +
-    theme_bw() + coord_fixed(xlim = longlimits, ylim = latlimits,ratio=1) +
-    theme(legend.position = 'right',
-          legend.direction= 'vertical',
-          panel.border	= element_rect(colour='white'),
-          panel.grid.major	= element_line(colour='grey50',linetype='dashed'),
-          panel.grid.minor	= element_line(colour='grey70',linetype='dashed'),
-          strip.background	= element_rect(fill='white',colour='NA'),
-          strip.text		= element_text(size=10,face='bold'),
-          axis.text		= element_text(size=10,face='italic'),
-          axis.title		= element_text(size=11))
-  
-  ggsave(plot=p,filename=as.character(paste("WindField",m.ss$date[i],m.ss$dev[i],".jpeg",sep="_")),height=6,width=6,dpi=300)
-}
+
 
 
 ### STEP 6: Raw wind plots ------------------------------------ #####

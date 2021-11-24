@@ -1,8 +1,6 @@
 #create animated wind fields for the special cases
 #Oct. 27. 2021
 
-
-
 library(tidyverse)
 library(lubridate)
 library(sf)
@@ -10,7 +8,7 @@ library(raster)
 library(cowplot)
 library(rcartocolor)
 library(mapview)
-
+library(rworldmap)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
@@ -399,6 +397,9 @@ region_w2 <- world %>%
 
 region_w2_df <- data.frame(x = c(st_bbox(region_w2)[1],st_bbox(region_w2)[3],st_bbox(region_w2)[3],st_bbox(region_w2)[1]),
                         y = c(st_bbox(region_w2)[2],st_bbox(region_w2)[2],st_bbox(region_w2)[4],st_bbox(region_w2)[4]))
+
+#use the function (written in plot_the_globe.R)
+plot_with_inset(wind = wanderer2_wind, location = wanderer2, region_sf = region_w2, world.df = world.df)
 
 
 #create main map
