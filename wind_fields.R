@@ -353,6 +353,11 @@ world <- crop(world, extent(c(-140,140,-90,90))) %>%
   st_union() %>% 
   st_cast("POLYGON")
 
+worldMap <- getMap()
+world.points <- fortify(worldMap)
+world.points$region <- world.points$id
+world.df <- world.points[,c("long","lat","group", "region")]
+
 #extract the avoidance points
 
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/atlanitc_yellow_nosed_raw_wind_lres.RData") #wind_lres
@@ -387,11 +392,14 @@ wanderer2_wind <- wind_df %>%
 
 
 
-
 ### WANDERER2 #####
 
 region_w2 <- world %>% 
   st_crop(xmin = 25, xmax = 80, ymin = -70, ymax = -35.5)  
+
+region_w2_df <- data.frame(x = c(st_bbox(region_w2)[1],st_bbox(region_w2)[3],st_bbox(region_w2)[3],st_bbox(region_w2)[1]),
+                        y = c(st_bbox(region_w2)[2],st_bbox(region_w2)[2],st_bbox(region_w2)[4],st_bbox(region_w2)[4]))
+
 
 #create main map
 plot_w2 <- ggplot() +
@@ -399,7 +407,7 @@ plot_w2 <- ggplot() +
   geom_segment(data = wanderer2_wind, 
                aes(x = lon, xend = lon+u10/10, y = lat, 
                    yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
-  geom_sf(data = world, fill = "grey85", col = 1)+
+  geom_sf(data = world, fill = "grey85")+
   geom_point(data = wanderer2, aes(x = location.long, y = location.lat), 
              size = 2, colour = "red") +
   #coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
@@ -411,13 +419,14 @@ plot_w2 <- ggplot() +
         legend.text = element_text(size = 10, colour = 1), 
         legend.title = element_text(size = 12, colour = 1),
         legend.position = c(0.08,0.23),
-        legend.background = element_rect(colour = 1, fill = "white"))+
-  labs(x = NULL, y = NULL, title = wanderer2$sci_name)
+        legend.background = element_rect(colour = 1, fill = "white"),
+        plot.title = element_text(face = "italic"))+
+  labs(x = NULL, y = NULL, title = paste(wanderer2$sci_name, paste(wanderer2$timestamp, "UTC", sep = " "), sep = "   "))
 
 #create inset map
 worldmap_w2 <- ggplot() + 
   geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
-  geom_polygon(data = region_df, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+  geom_polygon(data = region_w2_df, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
   coord_map("ortho", orientation = c(wanderer2$location.lat+37, wanderer2$location.long, 0)) +
   scale_y_continuous(breaks = (-2:2) * 30) +
   scale_x_continuous(breaks = (-4:4) * 45) +
@@ -425,7 +434,7 @@ worldmap_w2 <- ggplot() +
   theme(axis.text = element_blank(),
         panel.background = element_rect(fill = "white")) +
   labs(x = NULL, y = NULL)
-worldmap_w2
+#worldmap_w2
 
 
 final_w2 <- ggdraw() +
