@@ -30,12 +30,15 @@ trips_sf <- data_df_all %>%
   
 mapview(trips_sf, zcol = "TripID")
 
-# 
-# sig_data$stratum <-as.character(sig_data$stratum)
-# 
-# avoidance_hour <- sig_data %>% 
-#   rowwise() %>% 
-#   mutate(unique_hour = paste(yday(timestamp), hour(timestamp), sep = "_"))
+
+#extract unique avoidance hour for each trip 
+avoidance_hour <- sig_data %>% 
+  rowwise() %>% 
+  mutate(unique_hour = paste(yday(timestamp), hour(timestamp), sep = "_")) %>% 
+  group_by(TripID) %>% 
+  summarize(unique_hour = unique(unique_hour))
+   
+save(avoidance_hour, file = "R_files/avoidance_hour_per_trip.RData")
 
 #unique timestamps for each trip
 times <- trips_df %>% 
@@ -345,16 +348,135 @@ for(i in unique(ayl$unique_hour)){
 
 #--------------------PLOT for manuscript -----
 
-world <- shapefile("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp")
-world <- crop(world, extent(c(-140,140,-90,90))) %>%
- st_as_sf(crs = wgs) %>%
- st_union() #%>%
- #st_cast("POLYGON")
+#open GIS info
+world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp")
 
 worldMap <- getMap()
 world.points <- fortify(worldMap)
 world.points$region <- world.points$id
 world.df <- world.points[,c("long","lat","group", "region")]
+
+#open data
+load("R_files/avoidance_hour_per_trip.RData") #avoidance_hour
+#keep tracks that will be plotted
+hrs_to_plot <- avoidance_hour %>% 
+  filter(TripID %in% c("2010_24",
+                       "77884_1",
+                       "73500_1",
+                       "XGPS2015_2016_CRO_106_3_1.csv") & 
+           !(unique_hour) %in% c("48_4","326_20","326_21")) %>%  #get rid of second point for XGPS2015... and atlantic yellow-nosed
+  ungroup()
+
+wind_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", pattern = "wind", full.names = T)
+           
+gps_ls <- setdiff(list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", full.names = T),wind_ls)
+
+#create a list of extent data frames
+region_ls <- list(data.frame(x = c(35, 65, 65, 35), #2010_24
+                          y = c(-47, -47, -27, -27)),
+               data.frame(x = c(-61, -32, -32, -61), #73500_1
+                          y = c(-45, -45, -26, -26)), 
+               data.frame(x = c(-31, 4, 4, -31), #77884_1
+                          y = c(-55, -55, -36 , -36)),
+               data.frame(x = c(30, 72, 72, 30), #XGPS2015_2016_CRO_106_3_1
+                          y = c(-69, -69, -52, -52))
+               )
+names(region_ls) <- hrs_to_plot$TripID
+
+inset_loc_ls <- list(data.frame(x = 0.76, y = 0.67),
+                     data.frame(x = 0.70, y = 0.70),
+                     data.frame(x = 0.76, y = 0.61),
+                     )
+
+
+#read in the files and prep for plotting
+plots <- lapply(hrs_to_plot$TripID, function(x){
+  
+  if(x != "73500_1"){ #do ayn later. it is not in the list of files created above
+    
+    load(grep(wind_ls, pattern = x, value = T)) #wind_df
+    load(grep(gps_ls, pattern = x, value = T)) #trip
+    
+    wind_df <- wind_df %>% 
+      filter(unique_hour == hrs_to_plot %>% filter(TripID == x) %>%  pull(unique_hour))
+    
+    point <- trip %>% 
+      filter(unique_hour == hrs_to_plot %>% filter(TripID == x) %>%  pull(unique_hour))
+  
+    } else {
+    
+    load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/atlanitc_yellow_nosed_raw_wind_lres.RData") #wind_lres
+    wind_df <- wind_lres %>% 
+      mutate(unique_hour = paste(yday,hour, sep = "_")) %>% 
+      filter(unique_hour == "326_23")
+    
+    load("R_files/trips_df_for_windfields.RData") #trips_df
+    point <- trips_df %>% 
+      filter(sci_name == "Thalassarche chlororhynchos") %>% 
+      mutate(unique_hour = paste(yday(timestamp),hour(timestamp), sep = "_")) %>% 
+      filter(unique_hour == "326_23")
+  }
+    
+    ext <- names(region_ls) %>%  str_detect(x) %>%  keep(region_ls, .) %>% flatten_dfr() #extract region for x. flatten is basically unlist
+    
+    #create main map
+    main_map <- ggplot() +
+      geom_raster(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
+      geom_segment(data = wind_df, 
+                   aes(x = lon, xend = lon+u10/10, y = lat, 
+                       yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+      geom_sf(data = world, fill = "grey85")+
+      geom_point(data = point, aes(x = location.long, y = location.lat), 
+                 size = 2, colour = "red") +
+      coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
+      scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                           na.value = "white", name = "Speed\n (m/s)")+
+      theme_bw()+
+      theme(axis.text = element_text(size = 12, colour = 1),
+            legend.text = element_text(size = 10, colour = 1), 
+            legend.title = element_text(size = 12, colour = 1),
+            legend.position = c(0.08,0.23),
+            legend.background = element_rect(colour = 1, fill = "white"),
+            plot.title = element_text(face = "italic"))+
+      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   "))
+    
+    #create inset map
+    inset <- ggplot() + 
+      geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
+      geom_polygon(data = ext, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+      coord_map("ortho", orientation = c(point$location.lat+37, point$location.long, 0)) +
+      scale_y_continuous(breaks = (-2:2) * 30) +
+      scale_x_continuous(breaks = (-4:4) * 45) +
+      theme_minimal() +
+      theme(axis.text = element_blank(),
+            panel.background = element_rect(fill = "white")) +
+      labs(x = NULL, y = NULL)
+    
+    X11(height = 5, width = 7)
+    final_plot <- ggdraw() +
+      draw_plot(main_map) +
+      draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
+      #draw_plot(inset, x = 0.73, y = 0.70, width = 0.25, height = 0.25)
+    
+    final_plot
+    
+    png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/", x, ".png"), 
+        height = 5, width = 7, units = "in", res = 300)
+    print(final_plot)
+    #grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
+    dev.off()
+ 
+})
+
+library(abind)
+library(png)
+img1 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/2010_24.png")
+img2 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/73500_1.png")
+img3 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/77884_1.png")
+img4 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/XGPS2015_2016_CRO_106_3_1.csv.png")
+all <- abind::abind(img1, img2, img3, img4, along=1)
+png::writePNG(all,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/all.png")
+
 
 #extract the avoidance points
 
@@ -376,7 +498,7 @@ sooty <- trip %>%
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Phoebetria fusca_77884_1_whole_trip_wind.RData") #wind_df
 sooty_wind <- wind_df %>% 
   filter(unique_hour == "326_9")
-
+  
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/Diomedea exulans_2010_24_whole_trip.RData") #trip
 wanderer1 <- trip %>% 
   filter(unique_hour == "32_14")
@@ -405,7 +527,7 @@ region_w2_df <- data.frame(x = c(st_bbox(region_w2)[1],st_bbox(region_w2)[3],st_
                         y = c(st_bbox(region_w2)[2],st_bbox(region_w2)[2],st_bbox(region_w2)[4],st_bbox(region_w2)[4]))
 
 #use the function (written in plot_the_globe.R)
-w2 <- plot_with_inset(wind = wanderer2_wind, location = wanderer2, region_sf = region_w2, world.df = world.df, world = world)
+#w2 <- plot_with_inset(wind = wanderer2_wind, location = wanderer2, region_sf = region_w2, world.df = world.df, world = world)
 
 
 #create main map
@@ -553,23 +675,23 @@ final_s1
 
 #st_crop is not following the arguments and creating a smaller extent. so, use st_intersection instead.
 #create a raster with the desired extent:
-ext <- st_set_crs(st_as_sf(as(raster::extent(-52, 10, -50, -25), "SpatialPolygons")), st_crs(world)) #extent: xmin, xmax, ymin, ymax
+#ext <- st_set_crs(st_as_sf(as(raster::extent(-52, 10, -50, -25), "SpatialPolygons")), st_crs(world)) #extent: xmin, xmax, ymin, ymax
 
-region_ayn <- world %>% 
-  st_intersection(ext)
+#region_ayn <- world %>% 
+#  st_intersection(ext)
 
-st_intersection(nc, st_set_crs(st_as_sf(as(raster::extent(-82, -80, 35, 36), "SpatialPolygons")), st_crs(nc)))
+#st_intersection(nc, st_set_crs(st_as_sf(as(raster::extent(-82, -80, 35, 36), "SpatialPolygons")), st_crs(nc)))
 
-region_ayn <- world %>% 
-  st_crop(ext) 
-  st_crop(y = c(-53, -50, 10, -25)) 
+#region_ayn <- world %>% 
+#  st_crop(ext) 
+#  st_crop(y = c(-53, -50, 10, -25)) 
 
 #or crop the wind layer and use that as the region
-  region <- world %>% 
-    st_crop(xmin = min(wind_df$lon), xmax = max(wind_df$lon), ymin = min(wind_df$lat), ymax = max(wind_df$lat))
+#  region <- world %>% 
+#    st_crop(xmin = min(wind_df$lon), xmax = max(wind_df$lon), ymin = min(wind_df$lat), ymax = max(wind_df$lat))
 
-region_ayn_df <- data.frame(x = c(st_bbox(region_ayn)[1],st_bbox(region_ayn)[3],st_bbox(region_ayn)[3],st_bbox(region_ayn)[1]),
-                           y = c(st_bbox(region_ayn)[2],st_bbox(region_ayn)[2],st_bbox(region_ayn)[4],st_bbox(region_ayn)[4]))
+#region_ayn_df <- data.frame(x = c(st_bbox(region_ayn)[1],st_bbox(region_ayn)[3],st_bbox(region_ayn)[3],st_bbox(region_ayn)[1]),
+#                           y = c(st_bbox(region_ayn)[2],st_bbox(region_ayn)[2],st_bbox(region_ayn)[4],st_bbox(region_ayn)[4]))
 
 #use the function (written in plot_the_globe.R)
 #ayn <- plot_with_inset(wind = ayn, location = ayn_pt, region_sf = region_ayn, world.df = world.df, world = world)
@@ -584,8 +706,8 @@ plot_ayn <- ggplot() +
   geom_sf(data = world, fill = "grey85")+
   geom_point(data = ayn_pt, aes(x = location.long, y = location.lat), 
              size = 2, colour = "red") +
-  #coord_sf(xlim = c(-62, 11), ylim =  c(-51, -25))+
-  coord_sf(xlim = st_bbox(region_ayn)[c(1,3)], ylim = st_bbox(region_ayn)[c(2,4)])+
+  coord_sf(xlim = c(-52, 10), ylim =  c(-50, -25))+
+  #coord_sf(xlim = st_bbox(region_ayn)[c(1,3)], ylim = st_bbox(region_ayn)[c(2,4)])+
   scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
                        na.value = "white", name = "Speed\n (m/s)")+
   theme_bw()+
