@@ -55,7 +55,7 @@ worldmap
 #create main map
 
 
-plot_with_inset <- function(wind, location, region_sf,  world.df){
+plot_with_inset <- function(wind, location, region_sf,  world.df, world){
   
   region_df <- data.frame(x = c(st_bbox(region_sf)[1],st_bbox(region_sf)[3],st_bbox(region_sf)[3],st_bbox(region_sf)[1]),
                           y = c(st_bbox(region_sf)[2],st_bbox(region_sf)[2],st_bbox(region_sf)[4],st_bbox(region_sf)[4]))
