@@ -543,6 +543,7 @@ X11(width = 8, height = 7)
       geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F,
       quantiles = 10, quantile_lines = F, scale = 3) +
     scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
+    #scale_fill_continuous(name = "Quantiles", type = oce::oceColorsPalette(120)) + #this didnt work
     scale_x_continuous(limits = c(-4, 5)) +
     labs(y = "", x = "Wind speed (m/s)") +
     theme_minimal() #+  
@@ -561,7 +562,7 @@ lm_input <- lm_input %>%
             list(z = ~as.numeric(scale(.)))) %>% 
   mutate(breeding_ch = as.character(median_breeding_m),
          max_wind_ms = max_wind/3.6) %>% 
-  arrange(median_breeding_yday) #order temporally, for temporal authocorrelation analysis.
+  arrange(median_breeding_yday) #order temporally, for temporal autocorrelation analysis.
 
 lm_input %>% 
   dplyr::select(c("colony.long","colony.lat","median_breeding_m","median_breeding_yday", "wing.loading..Nm.2.",
@@ -569,6 +570,16 @@ lm_input %>%
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #PC1 and PC2 are correlated; median month and yday are correlated. aspect ratio correlated with wing loading and wing span
+
+## add data quantity
+load("R_files/ann_18spp.RData") #ann; from PCoA_seabirds.R
+
+#extract number of data points and number of trips
+summary_info <- ann %>% 
+  group_by(sci_name, colony.name) %>% 
+  summarize(n_rows = n(),
+            n_trips = n_distinct(TripID)) %>% 
+  full_join(lm_input, by = c("sci_name", "colony.name"))
 
 #modeling
 
@@ -586,8 +597,10 @@ ggplot(lm_input,aes(wing.area..m2., max_wind_ms)) +
   theme_minimal()
 
 #model
-morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2898, AIC =  161.2964
+#morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2898, AIC =  161.2964
 #morph2 <- lm(max_wind ~ wing.loading..Nm.2._z + wing.area..m2._z, data = lm_input) #0.3096 , AIC = 161.6079
+
+morph <- lm(max_wind_ms ~ wing.loading..Nm.2. + n_trips, data = summary_info) #adR = 0.2476, AIC =  114.5655
 
 #investigate residuals
 par(mfrow = c(2,2))
@@ -597,12 +610,13 @@ plot(morph) #residuals are fine. 3rd plot: variance is higher at values between 
 #par(mfrow = c(2,2))
 #plot(morph2) #residual plots are worse than morph
 
-#plot residuals agains other variables
+#plot residuals against other variables
 plot(resid(morph) ~ wing.loading..Nm.2.[-1], data = lm_input)
 plot(resid(morph) ~ wing.area..m2.[-1], data = lm_input)
 plot(resid(morph) ~ colony.lat[-1], data = lm_input)
 plot(resid(morph) ~ colony.long[-1], data = lm_input)
 plot(resid(morph) ~ as.factor(breeding_ch[-1]), data = lm_input) #a little problematic. medians and variances are not equal
+plot(resid(morph) ~ n_trips[-1], data = summary_info)
 
 #temporal correlation. result: no temporal autocorrelation!
 acf(resid(morph))
@@ -622,31 +636,32 @@ bubble(spdata, "resid", col = c("blue","orange"))
 load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
 load("R_files/data_var.RData") #data_var
 
-lm_input <- lm_input %>% 
+summary_info <- summary_info %>% 
   mutate(group = paste(species, colony.name, sep = "_"))
 
 str_var <- data_var %>% 
   group_by(group) %>% 
   summarize(max_str_cov = max(wspd_cov)) %>% 
-  full_join(lm_input, by = "group") %>% 
+  full_join(summary_info, by = "group") %>% 
   as.data.frame()
 
 save(str_var, file = "R_files/str_var.RData")
   
   
 
+#lm_var <- lm(max_str_cov ~ wing.loading..Nm.2. + wing.area..m2., data = str_var)
 
-lm_var <- lm(max_str_cov ~ wing.loading..Nm.2. + wing.area..m2., data = str_var)
+m1 <- lm(max_str_cov ~ wing.loading..Nm.2. + scale(n_trips), data = str_var) # 0.2758  #AIC =  181.7002
 
-m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #0.3199 
+# m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #0.3199 
 
-m2 <- lm(max_str_cov ~  wing.area..m2., data = str_var) #0.1668 
-
-m3 <- lm(max_str_cov ~  aspect.ratio, data = str_var) #0.2779 
-
-m4 <- lm(max_str_cov ~  PC1, data = str_var) #0.375  
-
-m5 <- lm(max_str_cov ~ body.mass..kg., data = str_var) # 0.2462 
+# m2 <- lm(max_str_cov ~  wing.area..m2., data = str_var) #0.1668 
+# 
+# m3 <- lm(max_str_cov ~  aspect.ratio, data = str_var) #0.2779 
+# 
+# m4 <- lm(max_str_cov ~  PC1, data = str_var) #0.375  
+# 
+# m5 <- lm(max_str_cov ~ body.mass..kg., data = str_var) # 0.2462 
 
 ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
   geom_point() +
@@ -769,3 +784,53 @@ points(observed$wind_speed, observed$location.lat, pch = 20, cex = 0.1, col = "o
 
 
 
+
+
+### STEP 11: Correlation between data quantity and max wind speeds ------------------------------------ #####
+
+#load annotated data (one hourly subset)
+load("R_files/ann_18spp.RData") #ann; from PCoA_seabirds.R
+load("R_files/lm_input_20spp_col.RData") #lm_input 
+
+#extract number of data points and number of trips
+summary_info <- ann %>% 
+  group_by(sci_name, colony.name) %>% 
+  summarize(n_rows = n(),
+            n_trips = n_distinct(TripID)) %>% 
+  full_join(lm_input, by = c("sci_name", "colony.name")) %>% 
+  as.data.frame()
+
+#are nrows and n trips correlated?
+cor(summary_info$n_trips,summary_info$n_rows) #yes! 0.88
+
+#are max wind speeds correlated with nrows?
+#USED IN MS
+cor.test(summary_info$n_trips,summary_info$max_wind_ms) #0.15
+cor.test(summary_info[-3, "n_trips"], summary_info[-3,"max_wind_ms"]) #-0.3
+
+cor.test(str_var$n_trips, str_var$max_str_cov) #0.32
+cor.test(str_var[-18,"n_trips"], str_var[-18,"max_str_cov"]) # -0.15
+
+
+#cor(summary_info$n_rows,summary_info$max_wind) #0.3
+
+
+#plot without wandering albatross
+plot(max_wind ~ n_trips, data = summary_info[-3,])
+plot(max_wind ~ n_trips, data = summary_info)
+
+plot(max_str_cov ~ n_trips, data = str_var[-18,])
+plot(max_str_cov ~ n_trips, data = str_var)
+
+## use n_rows instead
+cor.test(summary_info$n_rows,summary_info$max_wind_ms) #0.3
+cor.test(summary_info[-3, "n_rows"], summary_info[-3,"max_wind_ms"]) #-0.4
+
+cor.test(str_var$n_rows, str_var$max_str_cov) #0.36
+cor.test(str_var[-18,"n_rows"], str_var[-18,"max_str_cov"]) # -0.4
+
+plot(max_wind ~ n_rows, data = summary_info[-3,])
+plot(max_wind ~ n_rows, data = summary_info)
+
+plot(max_str_cov ~ n_rows, data = str_var[-18,])
+plot(max_str_cov ~ n_rows, data = str_var)
