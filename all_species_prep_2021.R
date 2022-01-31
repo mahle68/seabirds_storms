@@ -335,7 +335,10 @@ save(data_df_all, file = "R_files/all_spp_df_colony_waal.RData")
 data_df_all %>% 
   group_by(sci_name) %>% 
   summarize(n_tracks = n_distinct(TripID),
-            n_ind = n_distinct(indID))
+            n_ind = n_distinct(indID)) %>% 
+  summarize(n_total_tracks = sum(n_tracks))
+
+
 
 # step 3: add flyingsitting to all ######
 
@@ -422,6 +425,10 @@ stopCluster(mycl)
 
 save(fl_sit_mv, file = "R_files/all_spp_sitting_flying.RData")
 
+
+
+
+
 # step 3: prep for annotation ######
 
 all_spp <- fl_sit_mv %>%
@@ -441,6 +448,23 @@ spp2 <- all_spp[((nrow(all_spp)/2) + 1): nrow(all_spp),]
 
 write.csv(spp1, "R_files/all_spp_annotation_1.csv")
 write.csv(spp2, "R_files/all_spp_annotation_2.csv")
+
+## now that we have flight vs non-flight for all, calculate total number of flight hours
+
+all_spp %>% 
+  filter(FlyingSitting == "flying") %>% 
+  group_by(sci_name,TripID) %>% 
+  arrange(timestamp) %>% 
+  summarize(time_diff = difftime(tail(timestamp,1),head(timestamp,1), units = "hours")) %>% #assuming that we have continous data for entire trips
+  ungroup() %>% 
+  summarize(total_time = sum(time_diff))
+
+#number of tracks still match what was estimated earlier
+all_spp %>% 
+  group_by(sci_name) %>% 
+  summarize(n_tracks = n_distinct(TripID)) %>% 
+  summarize(n_total_tracks = sum(n_tracks))
+
 
 #extract colony summaries
 all_spp %>% 

@@ -21,7 +21,7 @@ library(fitdistrplus)
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
+setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
 NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   deg2rad <- pi/180
@@ -166,7 +166,7 @@ load("20_spp_col_move_ls.RData") #move_ls
 
 int <- 60 #in minutes. for galapagos albatross, make this 90
 tol <- 15 #in minutes
-n_alt <- 50 #n of alternative points... seems like this was 100
+n_alt <- 30 #n of alternative points... 
 
 
 mycl <- makeCluster(10) 

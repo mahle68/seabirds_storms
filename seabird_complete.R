@@ -553,6 +553,7 @@ png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/r
 print(raw_wind)
 dev.off()
 
+
 ### STEP 7: LM: wind strength ------------------------------------ #####
 
 load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
