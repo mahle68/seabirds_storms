@@ -511,6 +511,9 @@ load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
 #  filter(scientific.name %in% c( "Ardenna gravis", "Diomedea dabbenena", "Diomedea exulans", "Fregata magnificens", "Fregata minor", "Morus bassanus", "Morus capensis", "Phaethon lepturus", "Phaethon rubricauda", 
 #                                 "Phoebastria irrorata", "Phoebetria fusca", "Procellaria cinerea", "Pterodroma incerta", "Pterodroma mollis",  "Sula dactylatra", "Sula granti",  "Sula sula", "Thalassarche chlororhynchos"))
 
+#add wing loading for great shearwater (decided to use the sooty shearwater value)
+lm_input[lm_input$species == "Great Shearwater", "wing.loading..Nm.2."] <- 88
+
 ann <- ann %>%  
   left_join(lm_input[,c(1,2,9:13)], by = "sci_name") %>% 
   mutate(group = paste(species, colony.name, sep = "_")) %>% 
