@@ -530,29 +530,22 @@ summ <- ann %>%
 #plot
 #https://www.datanovia.com/en/blog/elegant-visualization-of-density-distribution-in-r-using-ridgeline/
 
-#remove great shearwater for now. we dont know the wing loading
-ann <- ann %>% 
-  filter(species != "Great Shearwater") %>%
-  group_by(group_f) %>% 
-  mutate(scaled_wind_speed = scale(wind_speed_ms, center = F, scale = T),
-         centered_wind_speed = scale(wind_speed_ms, center = T, scale = F),
-         scaled_centered_wind_speed = scale(wind_speed_ms, center = T, scale = T))
+cols <- oce::oceColorsPalette(10)
 
 #with quantiles
 X11(width = 8, height = 7)
-  raw_wind <- ggplot(ann, aes(x = scaled_centered_wind_speed, y = group_f, fill = factor(stat(quantile)))) + 
+  raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = factor(stat(quantile)))) + 
     stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
                         point_shape = "|", point_size = 1, point_alpha = 0.7, size = 0.25,
       geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F,
       quantiles = 10, quantile_lines = F, scale = 3) +
     scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
-    #scale_fill_continuous(name = "Quantiles", type = oce::oceColorsPalette(120)) + #this didnt work
-    scale_x_continuous(limits = c(-4, 5)) +
+    scale_x_continuous(limits = c(-0.5, 25)) +
+    #scale_fill_manual(values = oce::oceColorsPalette(10)) + #this works, but colors are representing quantiles, not wind speeds
     labs(y = "", x = "Wind speed (m/s)") +
-    theme_minimal() #+  
-  theme(legend.position = "bottom") 
+    theme_minimal()
   
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_scaled_centered.png", width = 8, height = 8, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18.png", width = 8, height = 8, units = "in", res = 300)
 print(raw_wind)
 dev.off()
 
