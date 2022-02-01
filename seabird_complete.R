@@ -632,10 +632,15 @@ w <- 1/cophenetic(trees[[1]])
 diag(w) <- 0 #set the diagonal to 0
 
 #extract wind speed
-#change scie name for great shearwater to match the sci name in the tress
+#change sci name for great shearwater to match the sci name in the tress
 lm_input[lm_input$sci_name == "Ardenna gravis", "sci_name"] <- "Puffinus gravis"
-max_wspd <- lm_input$max_wind_ms
-names(max_wspd) <- lm_input$sci_name
+#take average of the two colonies for species that have multiple rows
+max_wspd_unique <- lm_input %>% 
+  group_by(sci_name) %>% 
+  summarize(max_wind_ms = mean(max_wind_ms)) %>% 
+  ungroup() 
+max_wspd <- max_wspd_unique$max_wind_ms
+names(max_wspd) <- max_wspd_unique$sci_name
 
 #estimate Moran's I
 Moran.I(max_wspd, w)
