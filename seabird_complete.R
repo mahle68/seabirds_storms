@@ -15,6 +15,7 @@ library(reticulate)
 library(ncdf4)
 library(oce)
 library(gridExtra)
+library(ape) #for phylogeny
 #library(gganimate)
 #install.packages('devtools')
 #devtools::install_github('mpio-be/windR')
@@ -596,36 +597,48 @@ ggplot(lm_input,aes(wing.area..m2., max_wind_ms)) +
   theme_minimal()
 
 #model
-#morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2898, AIC =  161.2964
-#morph2 <- lm(max_wind ~ wing.loading..Nm.2._z + wing.area..m2._z, data = lm_input) #0.3096 , AIC = 161.6079
-
-morph <- lm(max_wind_ms ~ wing.loading..Nm.2. + n_trips, data = summary_info) #adR = 0.2476, AIC =  114.5655
+morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2809 , AIC =  120.0459
 
 #investigate residuals
 par(mfrow = c(2,2))
 plot(morph) #residuals are fine. 3rd plot: variance is higher at values between 50-60. perhaps because of large sample size there.
 
-#X11()
-#par(mfrow = c(2,2))
-#plot(morph2) #residual plots are worse than morph
 
 #plot residuals against other variables
-plot(resid(morph) ~ wing.loading..Nm.2.[-1], data = lm_input)
-plot(resid(morph) ~ wing.area..m2.[-1], data = lm_input)
-plot(resid(morph) ~ colony.lat[-1], data = lm_input)
-plot(resid(morph) ~ colony.long[-1], data = lm_input)
-plot(resid(morph) ~ as.factor(breeding_ch[-1]), data = lm_input) #a little problematic. medians and variances are not equal
-plot(resid(morph) ~ n_trips[-1], data = summary_info)
+plot(resid(morph) ~ wing.loading..Nm.2., data = lm_input)
+plot(resid(morph) ~ wing.area..m2., data = lm_input)
+plot(resid(morph) ~ colony.lat, data = lm_input)
+plot(resid(morph) ~ colony.long, data = lm_input)
+plot(resid(morph) ~ as.factor(breeding_ch), data = lm_input) #a little problematic. medians and variances are not equal
+plot(resid(morph) ~ n_trips, data = summary_info)
 
 #temporal correlation. result: no temporal autocorrelation!
 acf(resid(morph))
 acf(resid(morph),type = "p")
 
 #spatial autocorrelation. bubble plot result: no autocorrelation
-spdata <- data.frame(resid = resid(morph), x = lm_input$colony.long[-1], y = lm_input$colony.lat[-1])
+spdata <- data.frame(resid = resid(morph), x = lm_input$colony.long, y = lm_input$colony.lat)
 coordinates(spdata)<-~ x + y
 bubble(spdata, "resid", col = c("blue","orange"))
-#try a semivariogram?
+
+#check for phylogeny
+
+#100 trees downloaded from https://birdtree.org/subsets/ for the 18 species
+trees <- read.nexus("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/phylogeny_tree/tree-pruner-5edeac95-d8ed-410a-8162-982b1438f4e9/output.nex")
+#use the first tree
+plot(trees[[1]])
+axisPhylo()
+w <- 1/cophenetic(trees[[1]])
+diag(w) <- 0 #set the diagonal to 0
+
+#extract wind speed
+#change scie name for great shearwater to match the sci name in the tress
+lm_input[lm_input$sci_name == "Ardenna gravis", "sci_name"] <- "Puffinus gravis"
+max_wspd <- lm_input$max_wind_ms
+names(max_wspd) <- lm_input$sci_name
+
+#estimate Moran's I
+Moran.I(max_wspd, w)
 
 #To Do:
 #pool the two colonies for RFB and MF. add great shearwater
