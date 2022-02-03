@@ -862,3 +862,61 @@ plot(max_wind ~ n_rows, data = summary_info)
 
 plot(max_str_cov ~ n_rows, data = str_var[-18,])
 plot(max_str_cov ~ n_rows, data = str_var)
+
+### STEP 12: boxplots comparing step lengths 1, 2, 4, 6 for wandering albatross ------------------------------------ #####
+
+#open annotated data
+load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
+
+waal_1 <- ann_30 %>% 
+  filter(common_name == "Wandering albatross") %>%
+  rename(wind_speed_ms = wind_speed) %>% 
+  mutate(time_lag = "1 hour") %>% 
+  dplyr::select(c("location.lat", "location.long", "timestamp", "TripID", "wind_speed_ms","stratum", "time_lag", "used"))
+
+waal_2 <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_2hr/WAAL_Wind50kmh_alt_steps_2hr.csv-1140471397987818705.csv", 
+                   stringsAsFactors = F) %>% 
+  mutate(time_lag = "2 hours")
+
+waal_4 <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_4hr/WAAL_Wind50kmh_alt_steps_4hr_20n.csv-6340755668959204021.csv",
+                   stringsAsFactors = F)%>% 
+  mutate(time_lag = "4 hours")
+
+waal_6 <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/WAAL_6hr/WAAL_Wind50kmh_alt_steps_6hr_20n.csv-3127490191197375873.csv",
+                   stringsAsFactors = F)%>% 
+  mutate(time_lag = "6 hours")
+
+
+#calculate wind speed
+waal <- lapply(list(waal_2,waal_4,waal_6), function(x){
+  
+  x %>% 
+    rename(u10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.U.Component.,
+           v10 = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.V.Component.) %>% 
+    mutate(wind_speed_ms = sqrt(u10^2 + v10^2),
+           stratum = paste(TripID, burst_id, step_id, sep = "_")) %>% 
+    dplyr::select(c("location.lat", "location.long", "timestamp", "TripID", "wind_speed_ms","stratum", "time_lag", "used")) %>% 
+    as.data.frame()
+  
+}) %>% 
+  reduce(rbind) %>% 
+  mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  full_join(waal_1)
+
+#box plots
+
+X11(width = 12, height = 3)
+#par(mfrow= c(3,1), oma = c(3,0,3,0))
+
+boxplot(waal$wind_speed_ms ~ waal$time_lag, data = waal, boxfill = NA, border = NA, main = "Wind speed (m/s)", xlab = "", ylab = "")
+
+boxplot(waal[waal$used == 1,"wind_speed_ms"] ~ waal[waal$used == 1,"time_lag"], outcol = alpha("black", 0.2), 
+        yaxt = "n", xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9),  lwd = 0.7, outpch = 20, outcex = 0.8,
+        boxwex = 0.25, at = 1:length(unique(waal$time_lag)) - 0.15)
+
+boxplot(waal[waal$used == 0,"wind_speed_ms"] ~ waal[waal$used == 0,"time_lag"], outcol = alpha("black", 0.2),
+        yaxt = "n", xaxt = "n", add = T, boxfill = "grey", lwd = 0.7, outpch = 20, outcex = 0.8,
+        boxwex = 0.25, at = 1:length(unique(waal$time_lag)) + 0.15)
+
+legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n", cex = 0.8)
+
