@@ -16,6 +16,7 @@ library(ncdf4)
 library(oce)
 library(gridExtra)
 library(ape) #for phylogeny
+library(stargazer)
 #library(gganimate)
 #install.packages('devtools')
 #devtools::install_github('mpio-be/windR')
@@ -598,6 +599,10 @@ ggplot(lm_input,aes(wing.area..m2., max_wind_ms)) +
 
 #model
 morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2809 , AIC =  120.0459
+save(morph, file = "max_wspd_model.RData")
+
+#get latex output
+stargazer(morph)
 
 #investigate residuals
 par(mfrow = c(2,2))
@@ -628,7 +633,7 @@ trees <- read.nexus("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/p
 #use the first tree
 plot(trees[[1]])
 axisPhylo()
-w <- 1/cophenetic(trees[[1]])
+w <- 1/cophenetic(trees[[1]]) #Computes the cophenetic distances for a hierarchical clustering.
 diag(w) <- 0 #set the diagonal to 0
 
 #extract wind speed
@@ -642,18 +647,18 @@ max_wspd_unique <- lm_input %>%
 max_wspd <- max_wspd_unique$max_wind_ms
 names(max_wspd) <- max_wspd_unique$sci_name
 
-#estimate Moran's I
+#estimate Moran's I for maximum wind speed
 Moran.I(max_wspd, w)
 
-#To Do:
-#pool the two colonies for RFB and MF. add great shearwater
 
 ### STEP 8: LM: wind variability ------------------------------------ #####
 
-load("R_files/lm_input_20spp_col.RData") #lm_input (from PCoA_seabirds) #was sent to Emily too
 load("R_files/data_var.RData") #data_var
+#add wing loading for great shearwater (decided to use the sooty shearwater value)
+data_var[data_var$species == "Great Shearwater", "wing.loading..Nm.2."] <- 88
 
-summary_info <- summary_info %>% 
+
+summary_info <- summary_info %>%  
   mutate(group = paste(species, colony.name, sep = "_"))
 
 str_var <- data_var %>% 
@@ -664,21 +669,13 @@ str_var <- data_var %>%
 
 save(str_var, file = "R_files/str_var.RData")
   
-  
 
-#lm_var <- lm(max_str_cov ~ wing.loading..Nm.2. + wing.area..m2., data = str_var)
+m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #AIC = 189.2436; adjRsq = 0.3216  
+save(m1, file = "wspd_var_model.RData")
 
-m1 <- lm(max_str_cov ~ wing.loading..Nm.2. + scale(n_trips), data = str_var) # 0.2758  #AIC =  181.7002
 
-# m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #0.3199 
-
-# m2 <- lm(max_str_cov ~  wing.area..m2., data = str_var) #0.1668 
-# 
-# m3 <- lm(max_str_cov ~  aspect.ratio, data = str_var) #0.2779 
-# 
-# m4 <- lm(max_str_cov ~  PC1, data = str_var) #0.375  
-# 
-# m5 <- lm(max_str_cov ~ body.mass..kg., data = str_var) # 0.2462 
+#get latex output
+stargazer(morph)
 
 ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
   geom_point() +
@@ -686,12 +683,29 @@ ggplot(str_var,aes(wing.area..m2., max_str_cov)) +
   geom_smooth(method='lm', formula= y~x, se = T) +
   theme_minimal()
 
+#moran's I
+
+#change sci name for great shearwater to match the sci name in the tress
+str_var[str_var$sci_name == "Ardenna gravis", "sci_name"] <- "Puffinus gravis"
+#take average of the two colonies for species that have multiple rows
+var_wspd_unique <- str_var %>% 
+  group_by(sci_name) %>% 
+  summarize(max_str_cov = mean(max_str_cov, na.rm = T)) %>% 
+  ungroup() 
+var_wspd <- var_wspd_unique$max_str_cov
+names(var_wspd) <- var_wspd_unique$sci_name
+
+#estimate Moran's I for wind variability
+Moran.I(var_wspd, w)
+
+
 ### STEP 9: Plot linear models in one device ------------------------------------ #####
 
 load("R_files/str_var.RData")
 
-str_var <- str_var %>% 
-  mutate(max_wind_ms = max_wind/3.6)
+
+#str_var <- str_var %>% 
+#  mutate(max_wind_ms = max_wind/3.6)
 
 # m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
 # #https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
@@ -706,53 +720,50 @@ str_var <- str_var %>%
 # abline(m1,col = max_col)
 # matlines(conf_interval[-6,1], conf_interval[-6,2:3], col = "blue", lty = 2) #row 6 has NAs
 
-max_col <- "corn flower blue" #"#69b3a2"
-var_col <- "goldenrod"  # "#c7909d"
+#max_col <- "corn flower blue" #"#69b3a2"
+#var_col <- "goldenrod"  # "#c7909d"
 
-#
-
-m1 <- lm(max_wind_ms ~ wing.loading..Nm.2., data = str_var) #0.3199 
-
-ggplotRegression(m1)
-
-ggplot(str_var, aes(wing.loading..Nm.2., max_str_cov))+
-  geom_point() +
-  # Add the line using the fortified fit data, plotting the x vs. the fitted values
-  geom_line(data = fortify(m1), aes(x = wing.loading..Nm.2., y = .fitted))
+# m1 <- lm(max_wind_ms ~ wing.loading..Nm.2., data = str_var) #0.3199 
+# 
+# ggplotRegression(m1)
+# 
+# ggplot(str_var, aes(wing.loading..Nm.2., max_str_cov))+
+#   geom_point() +
+#   # Add the line using the fortified fit data, plotting the x vs. the fitted values
+#   geom_line(data = fortify(m1), aes(x = wing.loading..Nm.2., y = .fitted))
 
 
 #####
-X11(width = 12, height = 5)
+X11(width = 11, height = 5)
 lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_wind_ms), method = "lm", color = max_col, alpha = .2, fill = max_col) +
-  geom_point(aes(y = max_wind_ms), color = max_col, alpha = .6) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = "black", alpha = .2, fill = "gray") +
+  geom_point(aes(y = max_wind_ms), color = "black", alpha = .6, size = 2.7) +
   labs(x = "Wind loading") +
   scale_y_continuous(
     name = "Maximum wind speed (m/s)") +
   theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size=13))
+  theme(axis.title.y = element_text(size = 13))
 
 lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_str_cov), method = "lm", color = var_col, alpha = .2, fill = var_col) +
-  geom_point(aes(y = max_str_cov), color = var_col, alpha = .6) +
+  geom_smooth(aes(y = max_str_cov), method = "lm", color = "black", alpha = .2, fill = "gray") +
+  geom_point(aes(y = max_str_cov), color = "black", alpha = .6, size = 2.7) +
   labs(x = "Wind loading") +
   scale_y_continuous(
     name = "Variation in wind speed (%)") +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size=13))
+  theme(axis.title.y = element_text(size = 13))
 
  grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
 
 
 
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels.png", 
-    width = 12, height = 5, units = "in", res = 300)
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_bw.png", 
+    width = 11, height = 5, units = "in", res = 300)
 grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
 dev.off()
 
 
 ### STEP 10: Plot relationship between wind speed and latitude ------------------------------------ #####
-
 
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
