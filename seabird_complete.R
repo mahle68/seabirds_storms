@@ -514,8 +514,8 @@ load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
 #                                 "Phoebastria irrorata", "Phoebetria fusca", "Procellaria cinerea", "Pterodroma incerta", "Pterodroma mollis",  "Sula dactylatra", "Sula granti",  "Sula sula", "Thalassarche chlororhynchos"))
 
 #add wing loading for great shearwater (decided to use the sooty shearwater value)
-lm_input[lm_input$species == "Great Shearwater", "wing.loading..Nm.2."] <- 88
-save(lm_input, file = "R_files/lm_input_20spp_col.RData")
+#lm_input[lm_input$species == "Great Shearwater", "wing.loading..Nm.2."] <- 88
+#save(lm_input, file = "R_files/lm_input_20spp_col.RData")
 
 
 ann <- ann %>%  
@@ -541,11 +541,10 @@ X11(width = 8, height = 7)
   raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = factor(stat(quantile)))) + 
     stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
                         point_shape = "|", point_size = 1, point_alpha = 0.7, size = 0.25,
-      geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F,
-      quantiles = 10, quantile_lines = F, scale = 3) +
-    scale_fill_viridis_d(name = "Quantiles", alpha = 0.6) +
+                        geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F,
+                        quantiles = 10, quantile_lines = F, scale = 3) +
+    scale_fill_viridis_d(name = "Quantiles", alpha = 0.6, option = "magma") +
     scale_x_continuous(limits = c(-0.5, 25)) +
-    #scale_fill_manual(values = oce::oceColorsPalette(10)) + #this works, but colors are representing quantiles, not wind speeds
     labs(y = "", x = "Wind speed (m/s)") +
     theme_minimal()
   
@@ -553,6 +552,24 @@ png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/r
 print(raw_wind)
 dev.off()
 
+#play around with colors
+
+X11(width = 8, height = 7)
+raw_wind_oce <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
+  stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
+                      point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25,
+                      geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
+                      quantiles = 0.5, quantile_lines = T, scale = 3) +
+  scale_x_continuous(limits = c(-0.5, 25)) +
+  scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
+                       na.value = "white") +
+  labs(y = "", x = "Wind speed (m/s)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+ 
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_oce.png", width = 8, height = 8, units = "in", res = 300)
+print(raw_wind_oce)
+dev.off()
 
 ### STEP 7: LM: wind strength ------------------------------------ #####
 
@@ -636,6 +653,14 @@ axisPhylo()
 w <- 1/cophenetic(trees[[1]]) #Computes the cophenetic distances for a hierarchical clustering.
 diag(w) <- 0 #set the diagonal to 0
 
+#save the tree as supplementary material
+X11(width = 6, height = 7)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/phyl_tree.png", 
+    width = 6, height = 7, units = "in", res = 300)
+plot(trees[[1]])
+axisPhylo()
+dev.off()
+
 #extract wind speed
 #change sci name for great shearwater to match the sci name in the tress
 lm_input[lm_input$sci_name == "Ardenna gravis", "sci_name"] <- "Puffinus gravis"
@@ -701,39 +726,41 @@ Moran.I(var_wspd, w)
 
 ### STEP 9: Plot linear models in one device ------------------------------------ #####
 
+#extract a color from the oce palette for cohesion
+clr <- oce::oceColorsPalette(120)[14]
+
 load("R_files/str_var.RData")
 
+X11(width = 11, height = 5)
+lm_maxwind <-  ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = clr, alpha = .2, fill = clr) +
+  geom_point(aes(y = max_wind_ms), color = clr, alpha = .6, size = 2.7) +
+  labs(x = "Wind loading") +
+  scale_y_continuous(
+    name = "Variation in wind speed (%)") +# Features of the first axis
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(size = 13))
 
-#str_var <- str_var %>% 
-#  mutate(max_wind_ms = max_wind/3.6)
+lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
+  geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .2, fill = clr) +
+  geom_point(aes(y = max_str_cov), color = clr, alpha = .6, size = 2.7) +
+  labs(x = "Wind loading") +
+  scale_y_continuous(
+    name = "Variation in wind speed (%)") +# Features of the first axis
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(size = 13))
 
-# m1 <- lm(str_var$max_str_cov ~ str_var$wing.loading..Nm.2.) #0.3199 
-# #https://stackoverflow.com/questions/46459620/plotting-a-95-confidence-interval-for-a-lm-object
-# 
-# #create new data for plotting
-# newx <- seq(min(str_var$wing.loading..Nm.2., na.rm = T), max(str_var$wing.loading..Nm.2., na.rm = T), by = 0.05)
-# conf_interval <- predict(m1, newdata = data.frame(wing.loading..Nm.2.= newx), interval = "confidence",
-#                          level = 0.95)
-# 
-# plot(x = c(30,140), y = c(2,140), type = "n", xlab = "", ylab = "")
-# 
-# abline(m1,col = max_col)
-# matlines(conf_interval[-6,1], conf_interval[-6,2:3], col = "blue", lty = 2) #row 6 has NAs
+grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
 
-#max_col <- "corn flower blue" #"#69b3a2"
-#var_col <- "goldenrod"  # "#c7909d"
-
-# m1 <- lm(max_wind_ms ~ wing.loading..Nm.2., data = str_var) #0.3199 
-# 
-# ggplotRegression(m1)
-# 
-# ggplot(str_var, aes(wing.loading..Nm.2., max_str_cov))+
-#   geom_point() +
-#   # Add the line using the fortified fit data, plotting the x vs. the fitted values
-#   geom_line(data = fortify(m1), aes(x = wing.loading..Nm.2., y = .fitted))
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue.png", 
+    width = 11, height = 5, units = "in", res = 300)
+grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
+dev.off()
 
 
-#####
+###########
+
+
 X11(width = 11, height = 5)
 lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   geom_smooth(aes(y = max_wind_ms), method = "lm", color = "black", alpha = .2, fill = "gray") +
@@ -855,10 +882,10 @@ waal <- lapply(list(waal_2,waal_4,waal_6), function(x){
 
 #box plots
 
-X11(width = 12, height = 3)
+X11(width = 8, height = 4)
 
 png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/waal_1_6_hist.png", 
-    width = 11, height = 3, units = "in", res = 300)
+    width = 8, height = 4, units = "in", res = 300)
 
 boxplot(waal$wind_speed_ms ~ waal$time_lag, data = waal, boxfill = NA, border = NA, main = "Wind speed (m/s) estimated for used and available locations", xlab = "", ylab = "")
 
