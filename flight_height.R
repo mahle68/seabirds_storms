@@ -17,7 +17,6 @@ load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie
 #plot 
 plot(height.above.ellipsoid ~ windSpeed_ms, data = WaveAlba_split %>%  filter(height.above.ellipsoid < 1000), main = "waved albatross")
 
-
 #annotate all with wind 
 
 frigate <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/annotation/flight_height/MPIAB PNIC hurricane frigate tracking-5622463111006907301/MPIAB PNIC hurricane frigate tracking-5622463111006907301.csv") %>% 

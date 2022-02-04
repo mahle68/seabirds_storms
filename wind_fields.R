@@ -385,7 +385,7 @@ names(region_ls) <- hrs_to_plot$TripID
 
 inset_loc_ls <- list(data.frame(x = 0.76, y = 0.67),
                      data.frame(x = 0.70, y = 0.70),
-                     data.frame(x = 0.76, y = 0.61),
+                     data.frame(x = 0.76, y = 0.61)
                      )
 
 
@@ -483,4 +483,5 @@ png::writePNG(two1,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/pa
 png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/two2.png")
 
 png::writePNG(all,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/all_stills.png")
+
 
