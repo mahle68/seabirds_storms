@@ -350,7 +350,7 @@ for(i in unique(ayl$unique_hour)){
 
 #open GIS info
 world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp")
-
+library(rworldmap)
 worldMap <- getMap()
 world.points <- fortify(worldMap)
 world.points$region <- world.points$id

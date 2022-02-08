@@ -739,40 +739,39 @@ str_var[str_var$species == "Great Shearwater","flight.type"] <- "dynamic soaring
 str_var$flight.type_F <- factor(str_var$flight.type)
 
 X11(width = 11, height = 5)
-lm_maxwind <-  ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_wind_ms), color = "black", method = "lm", alpha = .2) +
-  geom_point(aes(y = max_wind_ms, color = flight.type_F), alpha = .6, size = 2.7) +
-  labs(x = expression("Wing loading (Nm"^-2*")")) +
-  scale_y_continuous(
-    name = expression("Maximum wind speed (m s"^-1*")")) +# Features of the first axis
-  theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size = 13))
-
-ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_wind_ms), color = "black", method = "lm", alpha = .1) +
-  geom_point(aes(y = max_wind_ms, shape = flight.type_F), size = 2, stroke = 0.8) +
+lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = clr, alpha = .1, fill = clr) +
+  geom_point(aes(y = max_wind_ms, shape = flight.type_F), size = 2, stroke = 0.8, color = clr) +
   labs(x = expression("Wing loading (Nm"^-2*")")) +
   scale_shape_manual(values = c(0,2,1)) + #filled points: c(15, 17, 19)
   scale_y_continuous(
     name = expression("Maximum wind speed (m s"^-1*")")) +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size = 13))
+  theme(axis.title.y = element_text(size = 13)) +
+  guides(shape = guide_legend("Flight type:"))
 
 
 lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .2, fill = clr) +
-  geom_point(aes(y = max_str_cov), color = clr, alpha = .6, size = 2.7) +
-  labs(x = "Wing loading ()") +
+  geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .1, fill = clr) +
+  geom_point(aes(y = max_str_cov, shape = flight.type_F), size = 2, stroke = 0.8,  color = clr) +
+  labs(x = expression("Wing loading (Nm"^-2*")")) +
+  scale_shape_manual(values = c(0,2,1)) + #filled points: c(15, 17, 19)
   scale_y_continuous(
     name = "Variation in wind speed (%)") +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size = 13))
+  theme(axis.title.y = element_text(size = 13))+
+  guides(shape = guide_legend("Flight type:"))
 
-grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
+#grid.arrange(lm_maxwind, lm_covwind, nrow = 1, common.legend = TRUE, legend = "bottom")
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue.png", 
+library(patchwork)
+combined <- lm_maxwind + lm_covwind & theme(legend.position = "bottom")
+combined + plot_layout(guides = "collect")
+
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue_shapes.png", 
     width = 11, height = 5, units = "in", res = 300)
-grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
+combined + plot_layout(guides = "collect")
 dev.off()
 
 
