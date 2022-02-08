@@ -490,39 +490,33 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
  
 })
 
-
-#patchwork
-library(patchwork)
-
-aln_plots <- align_patches(plots[[1]] , plots[[2]], plots[[3]], plots[[4]])
-X11(width = 13, height = 11)
-grid.arrange(aln_plots[[1]], aln_plots[[2]], aln_plots[[3]],aln_plots[[4]], nrow = 2)
-
-X11(width = 15, height = 11)
-combined + plot_layout(byrow = T)
-
-X11(width = 15, height = 11)
-grid.arrange(plots[[1]] , plots[[2]], plots[[3]], plots[[4]] , nrow = 2)
-
-
-allplotslist <- align_plots(plots[[1]] , plots[[2]], plots[[3]], plots[[4]], align = "hv")
-X11(width = 13, height = 11)
-grid.arrange(allplotslist[[1]], allplotslist[[2]], allplotslist[[3]],allplotslist[[4]], nrow = 2)
-
 #stitch together in a very messy way
 
 library(abind)
 library(png)
-img1 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/2010_24.png")
-img2 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/73500_1.png")
-img3 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/77884_1.png")
-img4 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/XGPS2015_2016_CRO_106_3_1.csv.png")
+img1 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/2010_24.png")
+img2 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/73500_1.png")
+img3 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/77884_1.png")
+img4 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/XGPS2015_2016_CRO_106_3_1.csv.png")
 two1 <- abind::abind(img1, img4, along = 1)
 two2 <- abind::abind(img2, img3, along = 1)
 all <- abind::abind(two1, two2, along = 2)
-png::writePNG(two1,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/two1.png")
-png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/two2.png")
+png::writePNG(two1,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/two1.png")
+png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/two2.png")
 
-png::writePNG(all,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/all_stills.png")
+
+
+
+
+
+#crop two1 and two2 in gimp
+one <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/two1.png")
+two <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/two2.png")
+
+#crop to narrow
+library(grid)
+one2 <- grid.raster(one[,5:95,])
+all <- abind::abind(one, two, along = 2)
+png::writePNG(all_narrow,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/wind_stills.png")
 
 
