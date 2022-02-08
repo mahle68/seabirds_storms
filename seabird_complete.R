@@ -726,10 +726,16 @@ Moran.I(var_wspd, w)
 
 ### STEP 9: Plot linear models in one device ------------------------------------ #####
 
-#extract a color from the oce palette for cohesion
-clr <- oce::oceColorsPalette(120)[14]
+#load("R_files/lm_input_20spp_col.RData") #lm_input
 
-load("R_files/str_var.RData")
+#extract a color from the oce palette for cohesion
+#clr <- oce::oceColorsPalette(120)[14]
+#color based on flight type
+
+
+load("R_files/str_var.RData") #str_var
+str_var[str_var$species == "Red-tailed tropicbird","flight.type"] <- "flap-gliding"
+
 
 X11(width = 11, height = 5)
 lm_maxwind <-  ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
