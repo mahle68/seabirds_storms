@@ -433,7 +433,9 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
       labs(x = NULL, y = NULL) 
     
     #create main map
-    final_plot <- ggplot() +
+    
+    if(x == "73500_1"){ #add legend only to one plot
+    main_map <- ggplot() +
       geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
       geom_segment(data = wind_df, 
                    aes(x = lon, xend = lon+u10/10, y = lat, 
@@ -443,26 +445,50 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
                  size = 2, colour = "red") +
       coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
       scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
-                           na.value = "white") +
+                           na.value = "white", name = expression(paste("Wind speed (m s"^-1*")"))) +
       theme_bw()+
       theme(axis.text = element_text(size = 12, colour = 1),
-            legend.text = element_text(size = 10, colour = 1), 
-            legend.title = element_text(size = 12, colour = 1),
-            #legend.position = c(0.08,0.23),
-            #legend.background = element_rect(colour = 1, fill = "white"),
+            legend.text = element_text(size = 9, colour = 1), 
+            legend.title = element_text(size = 10, colour = 1),
+            legend.position = c(0.13,0.83),
+            legend.spacing.y = unit(0, 'cm'),
+            legend.background = element_blank(),
             plot.title = element_text(face = "italic"))+
-      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) +
-      guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")"))) +
-      
-      #add inset
-      inset_element(inset, left = 0.75, bottom = 0.7, right = 1,top = 0.99, align_to = "plot")
+      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) #+
+      # guides(fill = guide_colorbar(title = expression(paste("Wind speed \n (m s"^-1*")")),
+      #                              title.position = "top", title.vjust = 1,
+      #                              #frame.colour = "black",
+      #                              barheight = 6,
+      #                              barwidth = 0.5)) 
     
+    } else {
+      main_map <- ggplot() +
+        geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
+        geom_segment(data = wind_df, 
+                     aes(x = lon, xend = lon+u10/10, y = lat, 
+                         yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
+        geom_sf(data = world, fill = "grey85")+
+        geom_point(data = point, aes(x = location.long, y = location.lat), 
+                   size = 2, colour = "red") +
+        coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
+        scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
+                             na.value = "white") +
+        theme_bw()+
+        theme(axis.text = element_text(size = 12, colour = 1),
+              legend.text = element_text(size = 10, colour = 1), 
+              legend.title = element_text(size = 12, colour = 1),
+              #legend.position = c(0.08,0.23),
+              #legend.background = element_rect(colour = 1, fill = "white"),
+              plot.title = element_text(face = "italic"))+
+        labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) +
+        guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")")))   
+    }
 
     
-    #X11(height = 5, width = 7)
-    #final_plot <- ggdraw() +
-    #  draw_plot(main_map) +
-    #  draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
+    X11(height = 5, width = 7)
+    final_plot <- ggdraw() +
+      draw_plot(main_map) +
+      draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
     
     final_plot
     
@@ -483,11 +509,11 @@ plots <- align_patches(plots[[1]] , plots[[2]], plots[[3]], plots[[4]])
 combined <- plots[[1]] + plots[[2]] + plots[[3]] + plots[[4]] & theme(legend.position = "bottom")
 
 X11(width = 15, height = 11)
-combined + plot_layout(guides = "collect")
+combined + plot_layout(guides = "collect", widths = 6, heights = 5)
 
 
 combined <- (plots[[1]] | plots[[2]] | plots[[3]] | plots[[4]]) & theme(legend.position = "bottom")
-combined + plot_layout(guides = 'collect',widths = 7, heights = 5)
+combined + plot_layout(guides = 'collect',widths, heights = )
 
 
 grid.arrange(plots[[1]] , plots[[2]], plots[[3]], plots[[4]] , nrow = 2)
