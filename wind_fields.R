@@ -9,6 +9,7 @@ library(cowplot)
 library(rcartocolor)
 library(mapview)
 library(rworldmap)
+library(cowplot)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
@@ -421,7 +422,7 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
     
     #create main map
     main_map <- ggplot() +
-      geom_raster(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
+      geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
       geom_segment(data = wind_df, 
                    aes(x = lon, xend = lon+u10/10, y = lat, 
                        yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
@@ -430,15 +431,16 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
                  size = 2, colour = "red") +
       coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
       scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
-                           na.value = "white", name = "Speed\n (m/s)")+
+                           na.value = "white") +
       theme_bw()+
       theme(axis.text = element_text(size = 12, colour = 1),
             legend.text = element_text(size = 10, colour = 1), 
             legend.title = element_text(size = 12, colour = 1),
-            legend.position = c(0.08,0.23),
-            legend.background = element_rect(colour = 1, fill = "white"),
+            #legend.position = c(0.08,0.23),
+            #legend.background = element_rect(colour = 1, fill = "white"),
             plot.title = element_text(face = "italic"))+
-      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   "))
+      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) +
+      guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")")))
     
     #create inset map
     inset <- ggplot() + 
@@ -450,23 +452,38 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
       theme_minimal() +
       theme(axis.text = element_blank(),
             panel.background = element_rect(fill = "white")) +
-      labs(x = NULL, y = NULL)
+      labs(x = NULL, y = NULL) 
     
-    X11(height = 5, width = 7)
+    #X11(height = 5, width = 7)
     final_plot <- ggdraw() +
       draw_plot(main_map) +
       draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
-      #draw_plot(inset, x = 0.73, y = 0.70, width = 0.25, height = 0.25)
     
     final_plot
     
-    png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/", x, ".png"), 
-        height = 5, width = 7, units = "in", res = 300)
-    print(final_plot)
+    #png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/", x, ".png"), 
+    #    height = 5, width = 7, units = "in", res = 300)
+    #print(final_plot)
     #grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
-    dev.off()
+    #dev.off()
  
 })
+
+
+#patchwork
+library(patchwork)
+
+combined <- plots[[1]] + plots[[2]] + plots[[3]] + plots[[4]] & theme(legend.position = "bottom")
+
+X11(width = 15, height = 11)
+combined + plot_layout(guides = "collect")
+
+
+combined <- (plots[[1]] | plots[[2]] | plots[[3]] | plots[[4]]) & theme(legend.position = "bottom")
+combined + plot_layout(guides = 'collect')
+
+
+grid.arrange(plots[[1]] , plots[[2]], plots[[3]], plots[[4]] , nrow = 2)
 
 #stitch together in a very messy way
 
