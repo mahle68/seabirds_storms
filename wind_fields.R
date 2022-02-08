@@ -454,16 +454,11 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
             legend.spacing.y = unit(0, 'cm'),
             legend.background = element_blank(),
             plot.title = element_text(face = "italic"))+
-      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) #+
-      # guides(fill = guide_colorbar(title = expression(paste("Wind speed \n (m s"^-1*")")),
-      #                              title.position = "top", title.vjust = 1,
-      #                              #frame.colour = "black",
-      #                              barheight = 6,
-      #                              barwidth = 0.5)) 
+      labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   "))
     
     } else {
       main_map <- ggplot() +
-        geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
+        geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed), show.legend = F)+
         geom_segment(data = wind_df, 
                      aes(x = lon, xend = lon+u10/10, y = lat, 
                          yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
@@ -472,31 +467,26 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
                    size = 2, colour = "red") +
         coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
         scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
-                             na.value = "white") +
+                             na.value = "white", name = expression(paste("Wind speed (m s"^-1*")"))) +
         theme_bw()+
         theme(axis.text = element_text(size = 12, colour = 1),
-              legend.text = element_text(size = 10, colour = 1), 
-              legend.title = element_text(size = 12, colour = 1),
-              #legend.position = c(0.08,0.23),
-              #legend.background = element_rect(colour = 1, fill = "white"),
               plot.title = element_text(face = "italic"))+
-        labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) +
-        guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")")))   
+        labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   "))
     }
 
     
-    X11(height = 5, width = 7)
+    #X11(height = 5, width = 7)
     final_plot <- ggdraw() +
       draw_plot(main_map) +
-      draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
+      draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25) #set this manually for each panel
+      #draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
     
     final_plot
     
-    #png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills/", x, ".png"), 
-    #    height = 5, width = 7, units = "in", res = 300)
-    #print(final_plot)
-    #grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
-    #dev.off()
+    png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Feb22/", x, ".png"), 
+        height = 5, width = 7, units = "in", res = 300)
+    print(final_plot)
+    dev.off()
  
 })
 
@@ -504,19 +494,20 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
 #patchwork
 library(patchwork)
 
-plots <- align_patches(plots[[1]] , plots[[2]], plots[[3]], plots[[4]])
-
-combined <- plots[[1]] + plots[[2]] + plots[[3]] + plots[[4]] & theme(legend.position = "bottom")
+aln_plots <- align_patches(plots[[1]] , plots[[2]], plots[[3]], plots[[4]])
+X11(width = 13, height = 11)
+grid.arrange(aln_plots[[1]], aln_plots[[2]], aln_plots[[3]],aln_plots[[4]], nrow = 2)
 
 X11(width = 15, height = 11)
-combined + plot_layout(guides = "collect", widths = 6, heights = 5)
+combined + plot_layout(byrow = T)
 
-
-combined <- (plots[[1]] | plots[[2]] | plots[[3]] | plots[[4]]) & theme(legend.position = "bottom")
-combined + plot_layout(guides = 'collect',widths, heights = )
-
-
+X11(width = 15, height = 11)
 grid.arrange(plots[[1]] , plots[[2]], plots[[3]], plots[[4]] , nrow = 2)
+
+
+allplotslist <- align_plots(plots[[1]] , plots[[2]], plots[[3]], plots[[4]], align = "hv")
+X11(width = 13, height = 11)
+grid.arrange(allplotslist[[1]], allplotslist[[2]], allplotslist[[3]],allplotslist[[4]], nrow = 2)
 
 #stitch together in a very messy way
 

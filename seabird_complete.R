@@ -762,8 +762,6 @@ lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   theme(axis.title.y = element_text(size = 13))+
   guides(shape = guide_legend("Flight type:"))
 
-#grid.arrange(lm_maxwind, lm_covwind, nrow = 1, common.legend = TRUE, legend = "bottom")
-
 library(patchwork)
 combined <- lm_maxwind + lm_covwind & theme(legend.position = "bottom")
 combined + plot_layout(guides = "collect")
@@ -773,39 +771,6 @@ png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/l
     width = 11, height = 5, units = "in", res = 300)
 combined + plot_layout(guides = "collect")
 dev.off()
-
-
-###########
-
-
-X11(width = 11, height = 5)
-lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_wind_ms), method = "lm", color = "black", alpha = .2, fill = "gray") +
-  geom_point(aes(y = max_wind_ms), color = "black", alpha = .6, size = 2.7) +
-  labs(x = "Wind loading") +
-  scale_y_continuous(
-    name = "Maximum wind speed (m/s)") +
-  theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size = 13))
-
-lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_str_cov), method = "lm", color = "black", alpha = .2, fill = "gray") +
-  geom_point(aes(y = max_str_cov), color = "black", alpha = .6, size = 2.7) +
-  labs(x = "Wind loading") +
-  scale_y_continuous(
-    name = "Variation in wind speed (%)") +# Features of the first axis
-  theme_minimal() + #theme_ipsum() looks better
-  theme(axis.title.y = element_text(size = 13))
-
- grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
-
-
-
-png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_bw.png", 
-    width = 11, height = 5, units = "in", res = 300)
-grid.arrange(lm_maxwind, lm_covwind, nrow = 1)
-dev.off()
-
 
 ### STEP 11: Correlation between data quantity and max wind speeds ------------------------------------ #####
 
