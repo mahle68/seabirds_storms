@@ -420,8 +420,20 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
     
     ext <- names(region_ls) %>%  str_detect(x) %>%  keep(region_ls, .) %>% flatten_dfr() #extract region for x. flatten is basically unlist
     
+    #create inset map
+    inset <- ggplot() + 
+      geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
+      geom_polygon(data = ext, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
+      coord_map("ortho", orientation = c(point$location.lat+37, point$location.long, 0)) +
+      scale_y_continuous(breaks = (-2:2) * 30) +
+      scale_x_continuous(breaks = (-4:4) * 45) +
+      theme_minimal() +
+      theme(axis.text = element_blank(),
+            panel.background = element_rect(fill = "white")) +
+      labs(x = NULL, y = NULL) 
+    
     #create main map
-    main_map <- ggplot() +
+    final_plot <- ggplot() +
       geom_tile(data = wind_df, aes(x = lon, y = lat, fill = wind_speed))+
       geom_segment(data = wind_df, 
                    aes(x = lon, xend = lon+u10/10, y = lat, 
@@ -440,24 +452,17 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
             #legend.background = element_rect(colour = 1, fill = "white"),
             plot.title = element_text(face = "italic"))+
       labs(x = NULL, y = NULL, title = paste(point$sci_name, paste(point$timestamp, "UTC", sep = " "), sep = "   ")) +
-      guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")")))
+      guides(fill = guide_colorbar(expression("Wind speed (m s"^-1*")"))) +
+      
+      #add inset
+      inset_element(inset, left = 0.75, bottom = 0.7, right = 1,top = 0.99, align_to = "plot")
     
-    #create inset map
-    inset <- ggplot() + 
-      geom_polygon(data = world.df, aes(x = long, y = lat, group = group), fill = "grey80") +
-      geom_polygon(data = ext, aes(x = x, y = y), fill = NA, color = "black", size = 0.3) + 
-      coord_map("ortho", orientation = c(point$location.lat+37, point$location.long, 0)) +
-      scale_y_continuous(breaks = (-2:2) * 30) +
-      scale_x_continuous(breaks = (-4:4) * 45) +
-      theme_minimal() +
-      theme(axis.text = element_blank(),
-            panel.background = element_rect(fill = "white")) +
-      labs(x = NULL, y = NULL) 
+
     
     #X11(height = 5, width = 7)
-    final_plot <- ggdraw() +
-      draw_plot(main_map) +
-      draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
+    #final_plot <- ggdraw() +
+    #  draw_plot(main_map) +
+    #  draw_plot(inset, x = 0.7, y = 0.691, width = 0.25, height = 0.25)
     
     final_plot
     
@@ -473,6 +478,8 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
 #patchwork
 library(patchwork)
 
+plots <- align_patches(plots[[1]] , plots[[2]], plots[[3]], plots[[4]])
+
 combined <- plots[[1]] + plots[[2]] + plots[[3]] + plots[[4]] & theme(legend.position = "bottom")
 
 X11(width = 15, height = 11)
@@ -480,7 +487,7 @@ combined + plot_layout(guides = "collect")
 
 
 combined <- (plots[[1]] | plots[[2]] | plots[[3]] | plots[[4]]) & theme(legend.position = "bottom")
-combined + plot_layout(guides = 'collect')
+combined + plot_layout(guides = 'collect',widths = 7, heights = 5)
 
 
 grid.arrange(plots[[1]] , plots[[2]], plots[[3]], plots[[4]] , nrow = 2)
