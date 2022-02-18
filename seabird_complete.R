@@ -22,8 +22,8 @@ library(stargazer)
 #devtools::install_github('mpio-be/windR')
 #library(windR)
 
-setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 ggplotRegression <- function (fit) {
@@ -254,12 +254,15 @@ sig_plots <- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
   #scale_linetype_manual("",values = c("Selected wind speed" = 1)) +
   guides(fill = guide_legend(order = 1),
          line = guide_legend(order = 2)) +
-  labs(y = "Density", x = "Wind speed (m/s)") +
+  labs(y = "Density", x = expression("Wind speed (m s"^-1*")")) +
   theme_minimal() +
   theme(axis.ticks.y = element_blank(),
         axis.text.y = element_blank(),
         legend.title = element_blank())
 
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/sig_plots_unit_fixed.png", width = 7, height = 4, units = "in", res = 300)
+print(sig_plots)
+dev.off()
 
  
 
@@ -448,7 +451,7 @@ for(i in unique(ayl$unique_hour)){
           legend.background = element_rect(colour = 1, fill = "white"))+
     labs(x = NULL, y = NULL, title = wind_lres %>%  filter(unique_hour == i) %>% .$date_time %>% .[1])
   
-  ggsave(plot = plot, filename = paste0("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/wind_field_",i,".jpeg"), 
+  ggsave(plot = plot, filename = paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/animation/wind_field_",i,".png"), 
          height = 6, width = 12, dpi = 300)
   
 }
@@ -563,11 +566,11 @@ raw_wind_oce <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x)))
   scale_x_continuous(limits = c(-0.5, 25)) +
   scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
                        na.value = "white") +
-  labs(y = "", x = "Wind speed (m/s)") +
+  labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
   theme_minimal() +
   theme(legend.position = "none")
  
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_oce.png", width = 8, height = 8, units = "in", res = 300)
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_oce_unit_fixed.png", width = 8, height = 8, units = "in", res = 300)
 print(raw_wind_oce)
 dev.off()
 
@@ -588,6 +591,10 @@ lm_input %>%
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #PC1 and PC2 are correlated; median month and yday are correlated. aspect ratio correlated with wing loading and wing span
+  
+#for MS
+cor.test(lm_input$wing.loading..Nm.2._z, lm_input$aspect.ratio) #0.73
+
 
 ## add data quantity
 load("R_files/ann_18spp.RData") #ann; from PCoA_seabirds.R
@@ -655,10 +662,10 @@ diag(w) <- 0 #set the diagonal to 0
 
 #save the tree as supplementary material
 X11(width = 6, height = 7)
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/phyl_tree.png", 
+png("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/phyl_tree_no_axis.png", 
     width = 6, height = 7, units = "in", res = 300)
 plot(trees[[1]])
-axisPhylo()
+#axisPhylo()
 dev.off()
 
 #extract wind speed
@@ -729,9 +736,7 @@ Moran.I(var_wspd, w)
 #load("R_files/lm_input_20spp_col.RData") #lm_input
 
 #extract a color from the oce palette for cohesion
-#clr <- oce::oceColorsPalette(120)[14]
-#color based on flight type
-
+clr <- oce::oceColorsPalette(120)[14]
 
 load("R_files/str_var.RData") #str_var
 str_var[str_var$species == "Red-tailed tropicbird","flight.type"] <- "flap-gliding"
@@ -827,6 +832,8 @@ plot(max_str_cov ~ n_rows, data = str_var)
 #open annotated data
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
 
+clr <- oce::oceColorsPalette(120)[14]
+
 waal_1 <- ann_30 %>% 
   filter(common_name == "Wandering albatross") %>%
   rename(wind_speed_ms = wind_speed) %>% 
@@ -862,23 +869,25 @@ waal <- lapply(list(waal_2,waal_4,waal_6), function(x){
   mutate(timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   full_join(waal_1)
 
+save(waal, file = "R_files/boxplots_for_waal.RData")
+
 #box plots
 
 X11(width = 8, height = 4)
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/waal_1_6_hist.png", 
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/waal_1_6_hist_blue.png", 
     width = 8, height = 4, units = "in", res = 300)
 
-boxplot(waal$wind_speed_ms ~ waal$time_lag, data = waal, boxfill = NA, border = NA, main = "Wind speed (m/s) estimated for used and available locations", xlab = "", ylab = "")
+boxplot(waal$wind_speed_ms ~ waal$time_lag, data = waal, boxfill = NA, border = NA, main = "", xlab = "", ylab = expression("Wind speed (m s"^-1*")"))
 
 boxplot(waal[waal$used == 1,"wind_speed_ms"] ~ waal[waal$used == 1,"time_lag"], outcol = alpha("black", 0.2), 
-        yaxt = "n", xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9),  lwd = 0.7, outpch = 20, outcex = 0.8,
+        yaxt = "n", xaxt = "n", add = T, boxfill = alpha(clr, 0.9),  lwd = 0.7, outpch = 20, outcex = 0.8,
         boxwex = 0.25, at = 1:length(unique(waal$time_lag)) - 0.15)
 
 boxplot(waal[waal$used == 0,"wind_speed_ms"] ~ waal[waal$used == 0,"time_lag"], outcol = alpha("black", 0.2),
         yaxt = "n", xaxt = "n", add = T, boxfill = "grey", lwd = 0.7, outpch = 20, outcex = 0.8,
         boxwex = 0.25, at = 1:length(unique(waal$time_lag)) + 0.15)
 
-legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n", cex = 0.8)
+legend("topleft", legend = c("used","available"), fill = c(alpha(clr, 0.9),"gray"), bty = "n", cex = 0.8)
 
 dev.off()
