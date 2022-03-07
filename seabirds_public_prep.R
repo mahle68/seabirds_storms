@@ -28,6 +28,22 @@ ann_30 <- ann_30 %>%
   mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
   as.data.frame()
 
+#fix the common name capitalization inconsistencies
+# ann_30[ann_30$common_name == "Nazca boobies", "common_name"] <- "Nazca booby"
+# ann_30[ann_30$common_name == "Tristan Albatross", "common_name"] <- "Tristan albatross"
+# ann_30[ann_30$common_name == "Sooty Albatross", "common_name"] <- "Sooty albatross"
+# ann_30[ann_30$common_name == "Great Shearwater", "common_name"] <- "Great shearwater"
+# ann_30[ann_30$common_name == "Grey Petrel", "common_name"] <- "Grey petrel"
+# ann_30[ann_30$common_name == "Galapagos albatross (waved albatross)", "common_name"] <- "Galapagos albatross"
+# ann_30[ann_30$common_name == "Soft-plumaged Petrel", "common_name"] <- "Soft-plumaged petrel"
+# ann_30[ann_30$common_name == "Atlantic Petrel", "common_name"] <- "Atlantic petrel"
+# ann_30[ann_30$common_name == "Atlantic Yellow-nosed Albatross", "common_name"] <- "Atlantic yellow-nosed albatross"
+# ann_30[ann_30$common_name == "masked booby", "common_name"] <- "Masked booby"
+
+#write to public repo
+save(ann_30, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/used_alt_annotated.RData")
+
+
 ### STEP 2: Calculate within-stratum variances ------------------------------------ #####
 
 #calculate and plot within stratum variances
@@ -205,6 +221,10 @@ ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
 load("R_files/lm_input_20spp_col.RData") #lm_input 
 load("R_files/ann_18spp.RData") #ann (from PCoA_seabirds.R)
 
+#save in public repo
+save(ann, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/hrly_data_ann.RData")
+
+
 ann <- ann %>%  
   left_join(lm_input[,c(1,2,9:13)], by = "sci_name") %>% 
   mutate(group = paste(species, colony.name, sep = "_")) %>% 
@@ -237,20 +257,45 @@ ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) +
 
 ### STEP 6: Linear Model: wind strength ------------------------------------ #####
 
-load("R_files/lm_input_20spp_col.RData") #lm_input
+load("R_files/lm_input_20spp_col.RData") #lm_input #update 7.2.2022: wing loading and aspect ratio for nazca booby were corrected usign Jennifer McKee's paper
+
+# lm_input[lm_input$species == "Nazca booby", "wing.loading..Nm.2."] <- 73.64
+# lm_input[lm_input$species == "Nazca booby", "aspect.ratio"] <- 7.10
+# 
+# #also fix the species names. all sentence case
+# lm_input[lm_input$species == "Nazca boobies", "species"] <- "Nazca booby"
+# lm_input[lm_input$species == "Tristan Albatross", "species"] <- "Tristan albatross"
+# lm_input[lm_input$species == "Sooty Albatross", "species"] <- "Sooty albatross"
+# lm_input[lm_input$species == "Great Shearwater", "species"] <- "Great shearwater"
+# lm_input[lm_input$species == "Grey Petrel", "species"] <- "Grey petrel"
+# lm_input[lm_input$species == "Galapagos albatross (waved albatross)", "species"] <- "Galapagos albatross"
+# lm_input[lm_input$species == "Soft-plumaged Petrel", "species"] <- "Soft-plumaged petrel"
+# lm_input[lm_input$species == "Atlantic Petrel", "species"] <- "Atlantic petrel"
+# lm_input[lm_input$species == "Atlantic Yellow-nosed Albatross", "species"] <- "Atlantic yellow-nosed albatross"
+# lm_input[lm_input$species == "masked booby", "species"] <- "Masked booby"
+
+
+#save(lm_input, file = "R_files/lm_input_20spp_col.RData")
 
 lm_input <- lm_input %>% 
-  mutate_at(c("colony.long","colony.lat", "wing.loading..Nm.2.", "wing.span..m.", "wing.area..m2.","aspect.ratio", "PC1", "PC2"),
-            list(z = ~as.numeric(scale(.)))) %>% 
+  #mutate_at(c("colony.long","colony.lat", "wing.loading..Nm.2.", "wing.span..m.", "wing.area..m2.","aspect.ratio", "PC1", "PC2"),
+  #          list(z = ~as.numeric(scale(.)))) %>% 
   mutate(breeding_ch = as.character(median_breeding_m),
          max_wind_ms = max_wind/3.6) %>% 
   arrange(median_breeding_yday) #order temporally, for temporal autocorrelation analysis.
   
+
+#save in public repo
+lm_input <- lm_input %>% 
+  dplyr::select(-c("PC1", "PC2")) %>% 
+  as.data.frame()
+save(lm_input, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/species_summary_data.R") #updated 7.3.2022
+
 #calculate correlation between wing loading and aspect ratio
-cor.test(lm_input$wing.loading..Nm.2._z, lm_input$aspect.ratio) #0.73
+cor.test(lm_input$wing.loading..Nm.2., lm_input$aspect.ratio) #0.60
 
 #model
-morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.2809 , AIC =  120.0459
+morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.31 , AIC =  119.2178
 save(morph, file = "max_wspd_model.RData")
 
 #get latex output (Table S2)
