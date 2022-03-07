@@ -24,10 +24,6 @@ library(stargazer)
 #open dataset with alternative steps for hourly steps. prepped in random_steps.R
 load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
   
-ann_30 <- ann_30 %>%  
-  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
-  as.data.frame()
-
 #fix the common name capitalization inconsistencies
 # ann_30[ann_30$common_name == "Nazca boobies", "common_name"] <- "Nazca booby"
 # ann_30[ann_30$common_name == "Tristan Albatross", "common_name"] <- "Tristan albatross"
@@ -39,6 +35,10 @@ ann_30 <- ann_30 %>%
 # ann_30[ann_30$common_name == "Atlantic Petrel", "common_name"] <- "Atlantic petrel"
 # ann_30[ann_30$common_name == "Atlantic Yellow-nosed Albatross", "common_name"] <- "Atlantic yellow-nosed albatross"
 # ann_30[ann_30$common_name == "masked booby", "common_name"] <- "Masked booby"
+
+ann_30 <- ann_30 %>%  
+  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
+  as.data.frame()
 
 #write to public repo
 save(ann_30, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/used_alt_annotated.RData")
@@ -386,10 +386,10 @@ str_var <- data_var %>%
   full_join(summary_info, by = "group") %>% 
   as.data.frame()
 
-m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #AIC = 189.2436; adjRsq = 0.3216  
+m1 <- lm(max_str_cov ~ wing.loading..Nm.2., data = str_var) #AIC = 188.3322; adjRsq = 0.3534  
 
 #get latex output (Table S3)
-stargazer(morph)
+stargazer(m1)
 
 #estimate moran's I
 
@@ -413,7 +413,7 @@ clr <- oce::oceColorsPalette(120)[14]
 
 #str_var was created in STEP 7
 str_var[str_var$species == "Red-tailed tropicbird","flight.type"] <- "flap-gliding"
-str_var[str_var$species == "Great Shearwater","flight.type"] <- "dynamic soaring"
+str_var[str_var$species == "Great shearwater","flight.type"] <- "dynamic soaring"
 str_var$flight.type_F <- factor(str_var$flight.type)
 
 X11(width = 11, height = 5)
@@ -444,6 +444,13 @@ lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
 #combine plots
 combined <- lm_maxwind + lm_covwind & theme(legend.position = "bottom")
 combined + plot_layout(guides = "collect")
+
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue_shapes_nbfixed.png", 
+    width = 11, height = 5, units = "in", res = 300)
+combined + plot_layout(guides = "collect")
+dev.off()
+
 
 ### STEP 8: Correlation between data quantity and max wind speeds ------------------------------------ #####
 

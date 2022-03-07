@@ -1,6 +1,7 @@
 #script for analysis and figure prep for the seabird manuscript
 #Sep 30. 2021. Elham Nourani, PhD. Radolfzell, DE.
 #sources: null_modeling_seabirds.R and PCoA_seabirds.R
+#figs were updated in seabird_public_prep.R
 
 library(tidyverse)
 library(parallel)
