@@ -64,10 +64,9 @@ data_var <- ann_30 %>%
 
 ### Plot Fig. S3 -------------------------------------------------------------------------
 
-data_var[data_var$species == "Galapagos albatross (waved albatross)","species"] <- "Galapagos albatross"
 
 X11(width = 5, height = 5)
- ggplot(data_var, aes(x = wspd_cov, y = reorder(as.factor(species), desc(as.factor(species))), height = stat(density))) + 
+CoV_bar <- ggplot(data_var, aes(x = wspd_cov, y = reorder(as.factor(species), desc(as.factor(species))), height = stat(density))) + 
   geom_density_ridges(
     stat = "binline", bins = 20, scale = 0.98, alpha = 0.3,
     draw_baseline = FALSE
@@ -75,7 +74,11 @@ X11(width = 5, height = 5)
   scale_x_continuous(limits = c(-4, 140)) +
   labs(y = "", x = "Coefficient of variation (%)") +
   theme_minimal()
-
+ 
+ png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/Cov_bar.png", width = 5, height = 5, units = "in", res = 300)
+ print(CoV_bar)
+ dev.off()
+ 
 ### STEP 3: Permutation test ------------------------------------ #####
 #In each stratum, is the difference between selected and max available wind speed higher than expected by chance?
 
@@ -156,6 +159,19 @@ p_vals <- p_vals %>%
 
 p_vals[p_vals$species == "Galapagos albatross (waved albatross)", "species"] <- "Galapagos albatross"
 
+#fix the common name capitalization inconsistencies
+p_vals[p_vals$species == "Nazca boobies", "species"] <- "Nazca booby"
+p_vals[p_vals$species == "Tristan Albatross", "species"] <- "Tristan albatross"
+p_vals[p_vals$species == "Sooty Albatross", "species"] <- "Sooty albatross"
+p_vals[p_vals$species == "Great Shearwater", "species"] <- "Great shearwater"
+p_vals[p_vals$species == "Grey Petrel", "species"] <- "Grey petrel"
+p_vals[p_vals$species == "Galapagos albatross (waved albatross)", "species"] <- "Galapagos albatross"
+p_vals[p_vals$species == "Soft-plumaged Petrel", "species"] <- "Soft-plumaged petrel"
+p_vals[p_vals$species == "Atlantic Petrel", "species"] <- "Atlantic petrel"
+p_vals[p_vals$species == "Atlantic Yellow-nosed Albatross", "species"] <- "Atlantic yellow-nosed albatross"
+p_vals[p_vals$species == "masked booby", "species"] <- "Masked booby"
+
+
 
 ### Plot Fig. S4 -------------------------------------------------------------------------
 X11(width = 5, height = 5)
@@ -169,6 +185,12 @@ perm_sig <- ggplot(p_vals, aes(x = p_more, y = reorder(as.factor(species), desc(
   labs(y = "", x = "Significance") +
   theme_minimal()
 
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/Perm_sig.png", width = 5, height = 5, units = "in", res = 300)
+print(perm_sig)
+dev.off()
+
+
+
 ### Plot Fig. S5 -------------------------------------------------------------------------
 #extract strata with significant avoidance of strong winds
 #extract strata with p-value less than 0.05
@@ -177,8 +199,8 @@ sig <- p_vals %>%
 
 sig_data <- ann_30 %>%
   filter(stratum %in% sig$stratum) %>% 
-  mutate(species = fct_relevel(as.factor(common_name), levels = "Atlantic Yellow-nosed Albatross", "Wandering albatross", 
-                                 "Sooty Albatross", "Red-footed booby")) %>% 
+  mutate(species = fct_relevel(as.factor(common_name), levels = "Atlantic yellow-nosed albatross", "Wandering albatross", 
+                                 "Sooty albatross", "Red-footed booby")) %>% 
   mutate(col = as.character(fct_relevel(species), levels = "corn flower blue", "rosy brown", "yellow green", "pale violet red")) %>% 
   as.data.frame()
 
@@ -195,13 +217,13 @@ used_wind <- sig_data %>%
 
 
 X11(width = 7, height = 4)
-ggplot(sig_data, aes(x = wind_speed, y = stratum)) + 
+sig_plots<- ggplot(sig_data, aes(x = wind_speed, y = stratum)) + 
   geom_density_ridges(scale = 3, alpha = 0.4,
                       jittered_points = TRUE,
                       position = position_points_jitter(width = 0.05, height = 0),
                       point_shape = '|', point_size = 2, point_alpha = 1, aes(fill = species)) + 
-  scale_fill_manual(values = c("Atlantic Yellow-nosed Albatross" = "corn flower blue", "Wandering albatross" = "yellowgreen", 
-                               "Sooty Albatross" = "lightcoral", "Red-footed booby" = "goldenrod")) +
+  scale_fill_manual(values = c("Atlantic yellow-nosed albatross" = "corn flower blue", "Wandering albatross" = "yellowgreen", 
+                               "Sooty albatross" = "lightcoral", "Red-footed booby" = "goldenrod")) +
   scale_x_continuous(limits = c(0, 25)) +
   geom_segment(data = used_wind, aes(x = wind_speed, xend = wind_speed, y = as.numeric(as.factor(stratum)),
                                      yend = as.numeric(as.factor(stratum)) + .9, linetype = "Selected wind speed"), color = "red") +
@@ -214,6 +236,12 @@ ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
   theme(axis.ticks.y = element_blank(),
         axis.text.y = element_blank(),
         legend.title = element_blank())
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/sig_plots_unit_fixed.png", width = 7, height = 4, units = "in", res = 300)
+print(sig_plots)
+dev.off()
+
+
 
 ### STEP 5: Raw wind plots ------------------------------------ #####
 
@@ -243,7 +271,7 @@ summ <- ann %>%
 cols <- oce::oceColorsPalette(10)
 
 X11(width = 8, height = 7)
-ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
+raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
   stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
                       point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25,
                       geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
@@ -254,6 +282,10 @@ ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) +
   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
   theme_minimal() +
   theme(legend.position = "none")
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_nbfixed.png", width = 8, height = 8, units = "in", res = 300)
+print(raw_wind)
+dev.off()
 
 ### STEP 6: Linear Model: wind strength ------------------------------------ #####
 
