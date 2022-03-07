@@ -10,6 +10,7 @@ library(rcartocolor)
 library(mapview)
 library(rworldmap)
 library(cowplot)
+library(ncdf4)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
