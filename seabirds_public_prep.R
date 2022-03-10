@@ -64,7 +64,6 @@ data_var <- ann_30 %>%
 
 ### Plot Fig. S3 -------------------------------------------------------------------------
 
-
 X11(width = 5, height = 5)
 CoV_bar <- ggplot(data_var, aes(x = wspd_cov, y = reorder(as.factor(species), desc(as.factor(species))), height = stat(density))) + 
   geom_density_ridges(
@@ -265,6 +264,14 @@ summ <- ann %>%
             max_wind = max(wind_speed_ms, na.rm = T)) %>% 
   as.data.frame()
   
+#fix flight styles
+lm_input <- lm_input %>% 
+  mutate(flight_style = ifelse(species %in% c("Magnificent frigatebird", "Great frigatebird"), "Thermal soaring",
+                               ifelse(species %in% c("Northern gannet", "Cape gannet", "Nazca booby", "Red-footed booby", "Masked booby"), "Wind soaring",
+                                      ifelse(species %in% c("White-tailed tropicbird", "Red-tailed tropicbird"), "Flapping", "Dynamic soaring"
+                                             )))) %>%  as.data.frame()
+
+
 
 ### Plot Fig. 1 -------------------------------------------------------------------------
 
@@ -319,9 +326,9 @@ lm_input <- lm_input %>%
 
 #save in public repo
 lm_input <- lm_input %>% 
-  dplyr::select(-c("PC1", "PC2")) %>% 
+  dplyr::select(-c("PC1", "PC2", "flight.type")) %>% #replacing flight type with flight style
   as.data.frame()
-save(lm_input, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/species_summary_data.R") #updated 7.3.2022
+save(lm_input, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/species_summary_data.R") #updated 10.3.2022
 
 #calculate correlation between wing loading and aspect ratio
 cor.test(lm_input$wing.loading..Nm.2., lm_input$aspect.ratio) #0.60
@@ -411,42 +418,39 @@ Moran.I(var_wspd, w)
 #extract a color from the oce palette for cohesion
 clr <- oce::oceColorsPalette(120)[14]
 
-#str_var was created in STEP 7
-str_var[str_var$species == "Red-tailed tropicbird","flight.type"] <- "flap-gliding"
-str_var[str_var$species == "Great shearwater","flight.type"] <- "dynamic soaring"
-str_var$flight.type_F <- factor(str_var$flight.type)
+str_var$flight_style_F <- factor(str_var$flight_style)
 
 X11(width = 11, height = 5)
 #plot for linear model predicting wind speed
 lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   geom_smooth(aes(y = max_wind_ms), method = "lm", color = clr, alpha = .1, fill = clr) +
-  geom_point(aes(y = max_wind_ms, shape = flight.type_F), size = 2, stroke = 0.8, color = clr) +
+  geom_point(aes(y = max_wind_ms, shape = flight_style_F), size = 2, stroke = 0.8, color = clr) +
   labs(x = expression("Wing loading (Nm"^-2*")")) +
-  scale_shape_manual(values = c(0,2,1)) + #filled points: c(15, 17, 19)
+  scale_shape_manual(values = c(4,0,2,1)) + #filled points: c(15, 17, 19)
   scale_y_continuous(
     name = expression("Maximum wind speed (m s"^-1*")")) +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
   theme(axis.title.y = element_text(size = 13)) +
-  guides(shape = guide_legend("Flight type:"))
+  guides(shape = guide_legend("Flight style:"))
 
 #plot for linear model predicting wind covariance
 lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
   geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .1, fill = clr) +
-  geom_point(aes(y = max_str_cov, shape = flight.type_F), size = 2, stroke = 0.8,  color = clr) +
+  geom_point(aes(y = max_str_cov, shape = flight_style_F), size = 2, stroke = 0.8,  color = clr) +
   labs(x = expression("Wing loading (Nm"^-2*")")) +
-  scale_shape_manual(values = c(0,2,1)) + #filled points: c(15, 17, 19)
+  scale_shape_manual(values = c(4,0,2,1)) + #filled points: c(15, 17, 19)
   scale_y_continuous(
     name = "Variation in wind speed (%)") +# Features of the first axis
   theme_minimal() + #theme_ipsum() looks better
   theme(axis.title.y = element_text(size = 13))+
-  guides(shape = guide_legend("Flight type:"))
+  guides(shape = guide_legend("Flight style:"))
 
 #combine plots
 combined <- lm_maxwind + lm_covwind & theme(legend.position = "bottom")
 combined + plot_layout(guides = "collect")
 
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue_shapes_nbfixed.png", 
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/lm_output_two_panels_blue_shapes_nbfixed_4levels.png", 
     width = 11, height = 5, units = "in", res = 300)
 combined + plot_layout(guides = "collect")
 dev.off()

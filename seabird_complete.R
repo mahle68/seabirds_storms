@@ -23,7 +23,7 @@ library(stargazer)
 #devtools::install_github('mpio-be/windR')
 #library(windR)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/")
+setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
