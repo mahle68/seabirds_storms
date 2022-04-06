@@ -41,7 +41,7 @@ ann_30 <- ann_30 %>%
   as.data.frame()
 
 #write to public repo
-save(ann_30, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/seabirds_storms_public/used_alt_annotated.RData")
+save(ann_30, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/used_alt_annotated.RData")
 
 
 ### STEP 2: Calculate within-stratum variances ------------------------------------ #####
@@ -269,28 +269,44 @@ lm_input <- lm_input %>%
   mutate(flight_style = ifelse(species %in% c("Magnificent frigatebird", "Great frigatebird"), "Thermal soaring",
                                ifelse(species %in% c("Northern gannet", "Cape gannet", "Nazca booby", "Red-footed booby", "Masked booby"), "Wind soaring",
                                       ifelse(species %in% c("White-tailed tropicbird", "Red-tailed tropicbird"), "Flapping", "Dynamic soaring"
-                                             )))) %>%  as.data.frame()
+                                      )))) %>%  
+  select(-"flight.type") %>%  #remove to avoid confusion
+  as.data.frame()
 
-
+#write to public folder
+save(lm_input, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data.RData")
 
 ### Plot Fig. 1 -------------------------------------------------------------------------
 
 cols <- oce::oceColorsPalette(10)
+#extract a color from the oce palette for cohesion
+clr <- oce::oceColorsPalette(120)[14]
 
-X11(width = 8, height = 7)
-raw_wind <- ggplot(ann, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
+##add flight type to ann (str_var from Fig. 3 step)
+str_var$flight_style_F <- factor(str_var$flight_style)
+
+ann_ft <- ann %>% 
+  left_join(str_var[,c("sci_name","flight_style_F")])
+
+
+X11(width = 8, height = 7.5)
+raw_wind <- ggplot(ann_ft, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
   stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
                       point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25,
                       geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
                       quantiles = 0.5, quantile_lines = T, scale = 3) +
-  scale_x_continuous(limits = c(-0.5, 25)) +
+  geom_point(data = ann_ft, aes(x = -0.8, y = group_f, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
+  scale_x_continuous(limits = c(-0.8, 25)) +
   scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
-                       na.value = "white") +
+                       na.value = "white", guide = 'none') +
+  scale_shape_manual(values = c(4,0,2,1)) +
   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
   theme_minimal() +
-  theme(legend.position = "none")
+  guides(shape = guide_legend("Flight style:")) +
+  theme(legend.position = "bottom",legend.title = element_text(size = 10), 
+        legend.text=element_text(size = 7))
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_nbfixed.png", width = 8, height = 8, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/raw_wind_jitter_desc_all18_nbfixed_shapes.png", width = 8, height = 8, units = "in", res = 300)
 print(raw_wind)
 dev.off()
 
@@ -362,7 +378,7 @@ axisPhylo()
 w <- 1/cophenetic(trees[[1]]) #Computes the cophenetic distances for a hierarchical clustering.
 diag(w) <- 0 #set the diagonal to 0
 
-### Plot Fig S6 -------------------------------------------------------------------------
+### Plot Fig. S6 -------------------------------------------------------------------------
 #save the tree as supplementary material
 X11(width = 6, height = 7)
 plot(trees[[1]])
@@ -413,7 +429,7 @@ names(var_wspd) <- var_wspd_unique$sci_name
 #estimate Moran's I for wind variability
 Moran.I(var_wspd, w)
 
-### Plot Fig 3 -------------------------------------------------------------------------
+### Plot Fig. 3 -------------------------------------------------------------------------
 
 #extract a color from the oce palette for cohesion
 clr <- oce::oceColorsPalette(120)[14]
@@ -435,7 +451,7 @@ lm_maxwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
 
 #plot for linear model predicting wind covariance
 lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
-  geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .1, fill = clr) +
+  geom_smooth(aes(y = max_str_cov), method = "lm", color = clr, alpha = .1, fill = clr) + #confidence intervals of the 0.95% by default
   geom_point(aes(y = max_str_cov, shape = flight_style_F), size = 2, stroke = 0.8,  color = clr) +
   labs(x = expression("Wing loading (Nm"^-2*")")) +
   scale_shape_manual(values = c(4,0,2,1)) + #filled points: c(15, 17, 19)
