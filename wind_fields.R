@@ -19,7 +19,6 @@ load("R_files/sig_data.RData") #sig_data
 #tracking data
 load("R_files/all_spp_df_colony_waal.RData") #data_df_all
 
-
 #extract entire trips for significant steps
 trips_df <- data_df_all %>% 
   filter(sci_name %in% sig_data$sci_name & TripID %in% sig_data$TripID)

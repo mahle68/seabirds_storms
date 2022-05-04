@@ -87,6 +87,16 @@ mtext("Frequency of wind speed values (m/s)- Peter Ryan's data", side = 3, outer
 
 dev.off()
 
+
+
+# update Apr 28: got peter ryan's data with individual IDs. use it to extract n individuals for the paper
+list_f <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/Peter_Ryan_ind_IDs", full.names = T)
+
+data <- lapply(list_f, read.csv,stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  group_by(common_name) %>% 
+  summarise(n = n_distinct(bird_id))
+
 #----------------------------------------------------------------------------------
 # David Gremiller's data
 data_list <- list.files("/home/mahle68/ownCloud/Work/Projects/seabirds_and_storms/data/David%20Gremillet/Scopoli_shearwater_GPS_20indiv_August2020")

@@ -47,3 +47,10 @@ plot(height.above.ellipsoid  ~ wind_speed_ms, data = RFB   %>%  filter(height.ab
      cex = 1, pch = 20, col = alpha("black", 0.3))
 
 dev.off()
+
+
+#update: May2.2022: correlation tests for altitude instead of making figures
+#
+cor.test(WaveAlba_split$height.above.ellipsoid, WaveAlba_split$windSpeed_ms) #-0.05
+cor.test(frigate$height.raw.n, frigate$wind_speed_ms) #-0.04
+cor.test(RFB$height.above.ellipsoid, RFB$wind_speed_ms) #0.002
