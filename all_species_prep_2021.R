@@ -3,6 +3,7 @@
 #update: don't subsample hourly. just subset to closest minute for gannets and nazca boobies (the sub-min resolutions that cause the C stack error.)
 #update: one minute is still causing errors. try rounding up to 15 min and then removing duplicated points
 #update: nazca booby and magnificient frigatebird are still problematic, so reduce to 25 min.
+#update june 13: extract the original data recording frequencies (mode)
 
 #Qs: are the red footed boobies in Europa breeding?
 # are all wandering albatrosses breeding?
@@ -23,6 +24,11 @@ wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
 
 NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   deg2rad <- pi/180
@@ -86,6 +92,20 @@ rtt <- read.csv("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/
 files <- list.files("data/From_Sophie/final_list_track_split", full.names = T)
 
 data_ls <- sapply(files, function(x) mget(load(x)), simplify = TRUE)
+
+#timelag for red footed boobies from genovesa
+data_ls[[9]] %>% 
+  group_by(TripID) %>% 
+  arrange(timestamp) %>% 
+  mutate(diff_min = as.numeric(difftime(timestamp, lag(timestamp), units = "mins")),
+         diff_hr = as.numeric(difftime(timestamp, lag(timestamp), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T),
+            sensor = head(sensor.type,1))
 
 #append rtt
 data_ls$red_tailed_tropicbird <- rtt
@@ -184,6 +204,45 @@ data_breeding %>%
 save(data_breeding, file = "R_files/mv_nbsample_w_colony.RData") #naza booby is a sample of 55 ind from the original 700 or whatever
 
 
+#extract mode of resolution
+load("R_files/mv_nbsample_w_colony.RData") #data_breeding
+
+#remove duplicated timestamps
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(data_breeding$TripID),timestamps = data_breeding$timestamp),"[",-1)) #get all but the first row of each set of duplicate rows
+
+data_breeding <- data_breeding[-rows_to_delete,] 
+
+
+
+timelags <- data_breeding %>%  
+  group_by(study.name, TripID) %>% 
+  arrange(timestamp) %>% 
+  mutate(diff_min = as.numeric(difftime(timestamp, lag(timestamp), units = "mins")),
+         diff_hr = as.numeric(difftime(timestamp, lag(timestamp), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  group_by(study.name) %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T),
+            sensor = head(sensor.type,1))
+
+#timelag for white-tailed tropicbird
+data_df %>% 
+  filter(study.name == "Foraging habitat of white-tailed tropicbirds (data from Santos et al. 2019)") %>% 
+  arrange(timestamp) %>% 
+  mutate(diff_min = as.numeric(difftime(timestamp, lag(timestamp), units = "mins")),
+         diff_hr = as.numeric(difftime(timestamp, lag(timestamp), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T),
+            sensor = head(sensor.type,1))
+
+
 # Peter Ryan data prep ######
 #peter ryan data from Sophie. These are all breeding
 
@@ -194,6 +253,21 @@ PR_data_split <- PR_data_split %>%
          colony.long = lon_colony)
 
 save(PR_data_split, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata")
+
+#get timelag
+PR_data_split %>% 
+  group_by(common_name, TripID) %>% 
+  arrange(date_time) %>% 
+  mutate(diff_min = as.numeric(difftime(date_time, lag(date_time), units = "mins")),
+         diff_hr = as.numeric(difftime(date_time, lag(date_time), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  group_by(common_name) %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T),
+            sensor = head(device,1))
 
 # Gremillet data prep ######
 #all breeding (incubation and chick-rearing)
@@ -229,6 +303,22 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(gannets$Tr
 gannets <- gannets[-rows_to_delete,] 
 
 save(gannets, file = "R_files/gannets_ls.RData")
+
+#get mdedian time lag
+load("R_files/gannets_ls.RData")
+
+gannets %>% 
+  group_by(common_name, TrackId) %>% 
+  arrange(timestamp) %>% 
+  mutate(diff_min = as.numeric(difftime(timestamp, lag(timestamp), units = "mins")),
+         diff_hr = as.numeric(difftime(timestamp, lag(timestamp), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  group_by(common_name) %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T))
 
 #make sure tripIDs are unique
 gannets %>% 
@@ -273,6 +363,21 @@ waal_RFB <- waal %>%
          location.lat = Latitude,
          indID = BirdID,
          timestamp = date_time)
+
+
+#estimate timelag
+waal_RFB %>% 
+  group_by(Species, TripID) %>% 
+  arrange(timestamp) %>% 
+  mutate(diff_min = as.numeric(difftime(timestamp, lag(timestamp), units = "mins")),
+         diff_hr = as.numeric(difftime(timestamp, lag(timestamp), units = "hours"))) %>% 
+  drop_na(diff_min) %>% 
+  ungroup() %>% 
+  group_by(Species) %>% 
+  summarize(mode_min = getmode(diff_min),
+            mode_hr = getmode(diff_hr),
+            med_min = median(diff_min, na.rm = T),
+            med_hr = median(diff_hr, na.rm = T))
 
 #sf <- st_as_sf(waal_RFB, coords = c("location.long", "location.lat"), crs = wgs)
 
@@ -366,7 +471,7 @@ move_ls <- lapply(split(data_df_all,data_df_all$sci_name),function(x){
 #time lag?
 
 move_ls_tl <- lapply(move_ls, function(x){
-  x$timeLag <-  unlist(lapply(timeLag(x, units="hours"),  c, NA))
+  x$timeLag <-  unlist(lapply(timeLag(x, units = "hours"),  c, NA))
   x
 })
 
