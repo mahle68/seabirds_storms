@@ -18,9 +18,9 @@ library(stargazer)
 
 ### STEP 1: Open all input data ------------------------------------ #####
 
-load("used_alt_annotated.RData") #ann_30; this file contains used and alternative steps (hourly). This will be used for permutation tests.
-load("species_summary_data.RData") #lm_input; this file contains summary information for each species including morphology and wind conditions experienced
-load("hrly_data_ann.RData") #ann; this file contains sub-sampled hourly data annotated with atmospheric information
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/used_alt_annotated.RData") #ann_30; this file contains used and alternative steps (hourly). This will be used for permutation tests.
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data.RData") #lm_input; this file contains summary information for each species including morphology and wind conditions experienced
+load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/hrly_data_ann.RData") #ann; this file contains sub-sampled hourly data annotated with atmospheric information
 
 ### STEP 2: Calculate within-stratum variances ------------------------------------ #####
 
@@ -202,6 +202,7 @@ acf(resid(morph),type = "p")
 #spatial autocorrelation. bubble plot result: no autocorrelation
 spdata <- data.frame(resid = resid(morph), x = lm_input$colony.long, y = lm_input$colony.lat)
 coordinates(spdata)<-~ x + y
+x11()
 bubble(spdata, "resid", col = c("blue","orange"))
 
 #check for phylogeny
@@ -306,6 +307,31 @@ lm_covwind <- ggplot(str_var, aes(x = wing.loading..Nm.2.)) +
 #combine plots
 combined <- lm_maxwind + lm_covwind & theme(legend.position = "bottom")
 combined + plot_layout(guides = "collect")
+
+#update Jun 17: plot body mass to respond to reviewer
+ggplot(str_var, aes(x = body.mass..kg.)) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = clr, alpha = .1, fill = clr) +
+  geom_point(aes(y = max_wind_ms, shape = flight_style_F), size = 2, stroke = 0.8, color = clr) +
+  labs(x = "Body mass (kg)") +
+  scale_shape_manual(values = c(4,0,2,1)) + #filled points: c(15, 17, 19)
+  scale_y_continuous(
+    name = expression("Maximum wind speed (m s"^-1*")")) +# Features of the first axis
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(size = 13)) +
+  guides(shape = guide_legend("Flight style:"))
+
+#remove heavy albatrosses
+ggplot(str_var %>% filter(!(species %in% c("Wandering albatross", "Tristan albatross"))), aes(x = body.mass..kg.)) +
+  geom_smooth(aes(y = max_wind_ms), method = "lm", color = clr, alpha = .1, fill = clr) +
+  geom_point(aes(y = max_wind_ms, shape = flight_style_F), size = 2, stroke = 0.8, color = clr) +
+  labs(x = "Body mass (kg)") +
+  scale_shape_manual(values = c(4,0,2,1)) + #filled points: c(15, 17, 19)
+  scale_y_continuous(
+    name = expression("Maximum wind speed (m s"^-1*")")) +# Features of the first axis
+  theme_minimal() + #theme_ipsum() looks better
+  theme(axis.title.y = element_text(size = 13)) +
+  guides(shape = guide_legend("Flight style:"))
+
 
 ### STEP 7: Correlation between data quantity and max wind speeds ------------------------------------ #####
 
