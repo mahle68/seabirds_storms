@@ -1,5 +1,7 @@
 #script for reproducing the results and figures of the manuscript "Maximum tolerable wind speed varies with morphology in seabirds"
 #April 2022. Elham Nourani, PhD. Konstanz, Germany.
+#update Aug 15: add wind conditions at distribution range for each species. problems: 1) wind is for 2017-2022 while gps is for 2005-2019; 2) only one data file per speceis,
+#hence ignoring the 
 
 #load libraries
 library(tidyverse)
@@ -15,12 +17,44 @@ library(oce)
 library(gridExtra)
 library(ape)
 library(stargazer)
+library(corrr)
 
 ### STEP 1: Open all input data ------------------------------------ #####
 
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/used_alt_annotated.RData") #ann_30; this file contains used and alternative steps (hourly). This will be used for permutation tests.
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data.RData") #lm_input; this file contains summary information for each species including morphology and wind conditions experienced
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/hrly_data_ann.RData") #ann; this file contains sub-sampled hourly data annotated with atmospheric information
+wind_distr <- readRDS("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/wind_at_distr_17_22.rds")
+
+#make sure species names, etc match between my data and Manos'
+sp_flight <- lm_input %>% 
+  mutate(flight_style_F = as.factor(flight_style)) %>% 
+  dplyr::select(c("sci_name", "species", "flight_style_F")) %>% 
+  group_by(species) %>% 
+  slice(1)
+
+range_data <- wind_distr %>% 
+  dplyr::select(-c("Group", "species")) %>%  
+  mutate(wind_data = "range") %>% 
+  rename(wind_speed_ms = WindSpeed, 
+         sci_name = Sci_name,
+         year = Year) %>% 
+  left_join(sp_flight, by = "sci_name") %>%  #add species name and flight type
+  mutate()
+
+
+### add range wind info to lm_input
+
+range_summ <- range_data %>% 
+  group_by(species) %>% 
+  summarize(range_mean = mean(wind_speed_ms),
+            range_median = median(wind_speed_ms),
+            range_max = max(wind_speed_ms))
+  
+lm_input <- lm_input %>% 
+  full_join(range_summ, by = "species")
+  
+saveRDS(lm_input, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data_with_ranges.RDS")
 
 ### STEP 2: Calculate within-stratum variances ------------------------------------ #####
 
@@ -182,11 +216,23 @@ sig_plots<- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
 
 ### STEP 5: Linear Model: wind strength ------------------------------------ #####
 
+
+#try one model with more stuff
+lm_input <- readRDS("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data_with_ranges.RDS")
+
+lm_input %>% 
+  dplyr::select(c("max_wind_ms", "wing.loading..Nm.2.", "range_max", "range_median")) %>% 
+  correlate()  #median_range and wing loading are identical. 97% correlated
+  
+range_M <- lm(max_wind_ms ~ range_max + range_median, data = lm_input)
+morph_M <- lm(max_wind_ms ~ wing.loading..Nm.2. + range_max , data = lm_input)
+
 #calculate correlation between wing loading and aspect ratio
 cor.test(lm_input$wing.loading..Nm.2., lm_input$aspect.ratio) #0.60
 
 #model
 morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.31 , AIC =  119.2178
+
 
 #get latex output (Table S2)
 stargazer(morph)
@@ -350,30 +396,115 @@ cor.test(str_var[,"n_trips"], str_var[,"max_str_cov"]) # -0.15
 
 ### Plot Fig. 1 -------------------------------------------------------------------------
 
+ann_ft <- ann %>% 
+  left_join(str_var[,c("sci_name","flight_style_F")])
+
+#merge the data from Manos (i.e. wind at distribution range) and tracking data annotated
+#with wind.
+
+sp_flight <- lm_input %>% 
+  mutate(flight_style_F = as.factor(flight_style)) %>% 
+  dplyr::select(c("sci_name", "species", "flight_style_F")) %>% 
+  group_by(species) %>% 
+  slice(1)
+
+range_data <- wind_distr %>% 
+  dplyr::select(-c("Group", "species")) %>%  
+  mutate(wind_data = "range") %>% 
+  rename(wind_speed_ms = WindSpeed, 
+         sci_name = Sci_name,
+         year = Year) %>% 
+  left_join(sp_flight, by = "sci_name") %>%  #add species name and flight type
+  mutate()
+
+wind_raw <- ann_ft %>% 
+  mutate(year = year(timestamp),
+         wind_data = "gps_pts") %>% 
+  dplyr::select(c("wind_speed_ms", "sci_name", "year", "species", "wind_data",  "flight_style_F")) %>% 
+  bind_rows(range_data)
+  
+
 cols <- oce::oceColorsPalette(10)
 #extract a color from the oce palette for cohesion
 clr <- oce::oceColorsPalette(120)[14]
 
-ann_ft <- ann %>% 
-  left_join(str_var[,c("sci_name","flight_style_F")])
-
-
 X11(width = 8, height = 7.5)
-raw_wind <- ggplot(ann_ft, aes(x = wind_speed_ms, y = group_f, fill = stat(x))) + 
+raw_wind <- ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = "wind_data", color = "wind_data")) + 
+    stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
+                        point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25) + #,
+                        #geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
+                        #quantiles = 0.5, quantile_lines = T, scale = 3) +
+    geom_point(data = wind_raw[wind_raw$wind_data == "gps_pts",], aes(x = -0.8, y = species, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
+    scale_x_continuous(limits = c(-0.8, 32)) +
+    #scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
+    #                     na.value = "white", guide = 'none') +
+    scale_shape_manual(values = c(4,0,2,1)) +
+    labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
+    theme_minimal() +
+    guides(shape = guide_legend("Flight style:")) +
+    theme(legend.position = "bottom",legend.title = element_text(size = 10), 
+          legend.text=element_text(size = 7))
+
+
+
+raw_windj <- ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = wind_data)) + 
+  geom_density_ridges(alpha = 0.5, jittered_points = TRUE,
+                      position = position_points_jitter(width = 0.05, height = 0),
+                      point_shape = '|', point_size = 3, point_alpha = 1, alpha = 0.7, color = wind_data)
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_density.png", width = 8, height = 8, units = "in", res = 300)
+ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = wind_data)) + 
+  geom_density_ridges(alpha = 0.5) +
+  theme_bw()
+dev.off()
+
+#test plot with jitters
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/test.png", width = 8, height = 8, units = "in", res = 300)
+ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = "wind_data", color = "wind_data")) + 
   stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
-                      point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25,
-                      geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
-                      quantiles = 0.5, quantile_lines = T, scale = 3) +
-  geom_point(data = ann_ft, aes(x = -0.8, y = group_f, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
-  scale_x_continuous(limits = c(-0.8, 25)) +
-  scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
-                       na.value = "white", guide = 'none') +
+                      point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25) +
+  geom_point(data = wind_raw[wind_raw$wind_data == "gps_pts",], aes(x = -0.8, y = species, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
+  scale_x_continuous(limits = c(-0.8, 32)) +
+  #scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
+  #                     na.value = "white", guide = 'none') +
   scale_shape_manual(values = c(4,0,2,1)) +
   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
   theme_minimal() +
   guides(shape = guide_legend("Flight style:")) +
   theme(legend.position = "bottom",legend.title = element_text(size = 10), 
         legend.text=element_text(size = 7))
+
+dev.off()
+
+#boxplots
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_box.png", width = 8, height = 8, units = "in", res = 300)
+ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = wind_data)) + 
+  geom_boxplot(outlier.size = 0.5) +
+  theme_bw()
+dev.off()
+
+
+#compare max wind speeds in gps vs data pts
+maxx <- wind_raw %>% group_by(species, wind_data) %>% summarize(max_wind = max(wind_speed_ms))
+
+plot(as.factor(maxx$species), maxx$max_wind, col = as.factor(maxx$wind_data))
+
+# X11(width = 8, height = 7.5)
+# (raw_wind <- ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = wind_data)) + 
+#   stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
+#                       point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25,
+#                       geom = "density_ridges_gradient", calc_ecdf = TRUE, panel_scaling = F, #only the median line
+#                       quantiles = 0.5, quantile_lines = T, scale = 3) +
+#   geom_point(data = wind_raw[wind_raw$wind_data == "gps_pts",], aes(x = -0.8, y = species, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
+#   scale_x_continuous(limits = c(-0.8, 30)) +
+#   #scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
+#   #                     na.value = "white", guide = 'none') +
+#   scale_shape_manual(values = c(4,0,2,1)) +
+#   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
+#   theme_minimal() +
+#   guides(shape = guide_legend("Flight style:")) +
+#   theme(legend.position = "bottom",legend.title = element_text(size = 10), 
+#         legend.text=element_text(size = 7)))
 
 ### Fig 2 -------------------------------------------------------------------------
 #based on https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
