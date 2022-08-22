@@ -18,6 +18,7 @@ library(gridExtra)
 library(ape)
 library(stargazer)
 library(corrr)
+library(introdataviz) #devtools::install_github("psyteachr/introdataviz")
 
 ### STEP 1: Open all input data ------------------------------------ #####
 
@@ -423,6 +424,7 @@ wind_raw <- ann_ft %>%
   dplyr::select(c("wind_speed_ms", "sci_name", "year", "species", "wind_data",  "flight_style_F")) %>% 
   bind_rows(range_data)
   
+save(wind_raw, file = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/wind_raw.rdata")
 
 cols <- oce::oceColorsPalette(10)
 #extract a color from the oce palette for cohesion
@@ -460,11 +462,11 @@ dev.off()
 
 #test plot with jitters
 png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/test.png", width = 8, height = 8, units = "in", res = 300)
-ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = "wind_data", color = "wind_data")) + 
+ggplot(sample, aes(x = wind_speed_ms, y = species, fill = "wind_data", color = "wind_data")) + 
   stat_density_ridges(jittered_points = TRUE, rel_min_height = .01,
                       point_shape = "|", point_size = 0.8, point_alpha = 0.5, size = 0.25) +
   geom_point(data = wind_raw[wind_raw$wind_data == "gps_pts",], aes(x = -0.8, y = species, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
-  scale_x_continuous(limits = c(-0.8, 32)) +
+  scale_x_continuous(limits = c(-0.8, 31.5)) +
   #scale_fill_gradientn(colours = alpha(oce::oceColorsPalette(120), alpha = 0.8), limits = c(0,23), 
   #                     na.value = "white", guide = 'none') +
   scale_shape_manual(values = c(4,0,2,1)) +
@@ -483,7 +485,28 @@ ggplot(wind_raw, aes(x = wind_speed_ms, y = species, fill = wind_data)) +
   theme_bw()
 dev.off()
 
+#try split-violin plots
+#https://psyteachr.github.io/introdataviz/advanced-plots.html
 
+#work on a sample
+sample <- wind_raw %>% 
+  filter(species %in% c("Wandering albatross" , "Nazca booby", "Red-tailed tropicbird" ))
+sample$species_f <- as.factor(sample$species)
+sample$wind_speed_ms <- round(sample$wind_speed_ms, digits = 2)
+
+ggplot(sample, aes(y = wind_speed_ms, x = species_f, fill = wind_data)) +
+  introdataviz::geom_split_violin(alpha = .4, trim = T) +
+  #geom_boxplot(width = .2, alpha = .6, fatten = NULL, show.legend = FALSE) +
+  #stat_summary(fun.data = "mean_se", geom = "pointrange", show.legend = F, 
+  #             position = position_dodge(.175)) +
+  scale_x_discrete(name = "Condition", labels = c("Non-word", "Word")) +
+  scale_y_continuous(name = "Reaction time (ms)",
+                     breaks = seq(200, 800, 100), 
+                     limits = c(200, 800)) +
+  scale_fill_brewer(palette = "Dark2", name = "Language group") +
+  theme_minimal()
+
+#############
 #compare max wind speeds in gps vs data pts
 maxx <- wind_raw %>% group_by(species, wind_data) %>% summarize(max_wind = max(wind_speed_ms))
 
