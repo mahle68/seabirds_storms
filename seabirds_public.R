@@ -217,7 +217,6 @@ sig_plots<- ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
 
 ### STEP 5: Linear Model: wind strength ------------------------------------ #####
 
-
 #try one model with more stuff
 lm_input <- readRDS("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_public/species_summary_data_with_ranges.RDS")
 
