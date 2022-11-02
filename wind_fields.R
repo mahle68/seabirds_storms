@@ -11,6 +11,7 @@ library(mapview)
 library(rworldmap)
 library(cowplot)
 library(ncdf4)
+library(ggimage)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
 
@@ -206,7 +207,7 @@ for (i in trips_df %>% filter(TripID != "73500_1") %>% distinct(TripID) %>% .$Tr
 #--------------------PLOT entire trips!!! -----
 #https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
 
-world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/World_Continents.shp") %>% 
   #st_crop(xmin = -62, xmax = 11, ymin = -51, ymax = -25) %>%
   st_union()
 
@@ -350,7 +351,7 @@ for(i in unique(ayl$unique_hour)){
 #--------------------PLOT for manuscript -----
 
 #open GIS info
-world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp")
+world <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/World_Continents.shp")
 library(rworldmap)
 worldMap <- getMap()
 world.points <- fortify(worldMap)
@@ -362,6 +363,12 @@ load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R_files/data_pub
 
 #open data
 load("R_files/avoidance_hour_per_trip.RData") #avoidance_hour
+
+#determine where the globe should be for each fig
+inset_locations <- data.frame(TripID = c("2010_24","77884_1", "73500_1", "XGPS2015_2016_CRO_106_3_1.csv"),
+                              inset_x = c(0.695, 0.725, 0.695, 0.701),
+                              inset_y = 0.691)
+
 #keep tracks that will be plotted
 hrs_to_plot <- avoidance_hour %>% 
   filter(TripID %in% c("2010_24",
@@ -369,11 +376,18 @@ hrs_to_plot <- avoidance_hour %>%
                        "73500_1",
                        "XGPS2015_2016_CRO_106_3_1.csv") & 
            !(unique_hour) %in% c("48_4","326_20","326_21")) %>%  #get rid of second point for XGPS2015... and atlantic yellow-nosed
-  ungroup()
+  ungroup() %>% 
+  full_join(inset_locations)
+
+
+
 
 wind_ls <- list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", pattern = "wind", full.names = T)
            
 gps_ls <- setdiff(list.files("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/wind_fields/processed/", full.names = T),wind_ls)
+
+#load albatross silhouette
+alb <- raster("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/figures/albatross-bird-shape.png")
 
 #create a list of extent data frames
 region_ls <- list(data.frame(x = c(35, 65, 65, 35), #2010_24
@@ -386,11 +400,6 @@ region_ls <- list(data.frame(x = c(35, 65, 65, 35), #2010_24
                           y = c(-69, -69, -52, -52))
                )
 names(region_ls) <- hrs_to_plot$TripID
-
-inset_loc_ls <- list(data.frame(x = 0.76, y = 0.67),
-                     data.frame(x = 0.70, y = 0.70),
-                     data.frame(x = 0.76, y = 0.61)
-                     )
 
 
 #read in the files and prep for plotting
@@ -405,7 +414,8 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
       filter(unique_hour == hrs_to_plot %>% filter(TripID == x) %>%  pull(unique_hour))
     
     point <- trip %>% 
-      filter(unique_hour == hrs_to_plot %>% filter(TripID == x) %>%  pull(unique_hour))
+      filter(unique_hour == hrs_to_plot %>% filter(TripID == x) %>%  pull(unique_hour)) %>% 
+      mutate(image = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/albatross_bw.png")
   
     } else {
     
@@ -417,7 +427,8 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
     load("R_files/trips_df_for_windfields.RData") #trips_df
     point <- trips_df %>% 
       filter(sci_name == "Thalassarche chlororhynchos") %>% 
-      mutate(unique_hour = paste(yday(timestamp),hour(timestamp), sep = "_")) %>% 
+      mutate(unique_hour = paste(yday(timestamp),hour(timestamp), sep = "_"),
+             image = "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/albatross_bw.png") %>%  #path to albatross clip art
       filter(unique_hour == "326_23")
   }
     
@@ -444,8 +455,10 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
                    aes(x = lon, xend = lon+u10/10, y = lat, 
                        yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
       geom_sf(data = world, fill = "grey85")+
-      geom_point(data = point, aes(x = location.long, y = location.lat), 
-                 size = 2, colour = "red") +
+      #geom_point(data = point, aes(x = location.long, y = location.lat), 
+      #           size = 2, colour = "red") +
+      geom_image(data = point,aes( x = location.long, y = location.lat, image = image),
+                 size = 0.7) +
       coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
       scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
                            na.value = "white", name = expression(paste("Wind speed (m s"^-1*")"))) +
@@ -467,8 +480,10 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
                      aes(x = lon, xend = lon+u10/10, y = lat, 
                          yend = lat+v10/10), arrow = arrow(length = unit(0.12, "cm")), size = 0.3)+
         geom_sf(data = world, fill = "grey85")+
-        geom_point(data = point, aes(x = location.long, y = location.lat), 
-                   size = 2, colour = "red") +
+        #geom_point(data = point, aes(x = location.long, y = location.lat), 
+        #           size = 2, colour = "red") +
+        geom_image(data = point,aes( x = location.long, y = location.lat, image = image),
+                   size = 0.7) +
         coord_sf(xlim = range(ext$x), ylim =  range(ext$y))+
         scale_fill_gradientn(colours = oce::oceColorsPalette(120), limits = c(0,23), 
                              na.value = "white", name = expression(paste("Wind speed (m s"^-1*")"))) +
@@ -483,7 +498,8 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
     #X11(height = 5, width = 7)
     final_plot <- ggdraw() +
       draw_plot(main_map) +
-      draw_plot(inset, x = 0.701, y = 0.691, width = 0.25, height = 0.25) #set this manually for each panel
+      draw_plot(inset, x = as.numeric(hrs_to_plot[hrs_to_plot$TripID == x, "inset_x"]),
+                y = as.numeric(hrs_to_plot[hrs_to_plot$TripID == x, "inset_y"]), width = 0.25, height = 0.25) #set this manually for each panel
     
     #inset locations
     #for "2010_24": x = 0.695, y = 0.691
@@ -492,7 +508,7 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
     #for ""XGPS2015_2016_CRO_106_3_1.csv": 
     final_plot
     
-    png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/", x, ".png"), 
+    png(paste0("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/", x, ".png"), 
         height = 5, width = 7, units = "in", res = 300)
     print(final_plot)
     dev.off()
@@ -503,15 +519,15 @@ plots <- lapply(hrs_to_plot$TripID, function(x){
 
 library(abind)
 library(png)
-img1 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/2010_24.png")
-img2 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/73500_1.png")
-img3 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/77884_1.png")
-img4 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/XGPS2015_2016_CRO_106_3_1.csv.png")
+img1 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/2010_24.png")
+img2 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/73500_1.png")
+img3 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/77884_1.png")
+img4 <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/XGPS2015_2016_CRO_106_3_1.csv.png")
 two1 <- abind::abind(img1, img4, along = 1)
 two2 <- abind::abind(img2, img3, along = 1)
 all <- abind::abind(two1, two2, along = 2)
-png::writePNG(two1,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/two1.png")
-png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/two2.png")
+png::writePNG(two1,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/two1.png")
+png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/two2.png")
 
 
 
@@ -519,10 +535,10 @@ png::writePNG(two2,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/pa
 
 
 #crop two1 and two2 in gimp
-one <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/two1_narrow.png")
-two <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/two2_narrow.png")
+one <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/two1_narrow.png")
+two <- readPNG("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/two2_narrow.png")
 
 all <- abind::abind(one, two, along = 2)
-png::writePNG(all,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Apr22/wind_stills_small_gap.png")
+png::writePNG(all,"/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper prep/figs/wind_field_stills_Oct22/wind_stills.png")
 
 
