@@ -266,13 +266,22 @@ lm_input <- readRDS("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/R
 
 morph <- lm(max_wind_ms ~ wing.loading..Nm.2., data = lm_input) #adR = 0.31 , AIC =  119.2178
 
-m_median <- lm(range_median ~ wing.loading..Nm.2., data = lm_input) #adR = 0.3463 , p-value= 0.003758
-
 winds_median <- lm(max_wind_ms ~ range_median, data = lm_input) #adR = 0.8317 , p-value= 1.333e-08
 
 wind_max <- lm(max_wind_ms ~ range_max, data = lm_input) #adR = -0.005037 , p-value= 0.3541
 
-m_max <- lm(range_max ~ wing.loading..Nm.2., data = lm_input) #adR = -0.04219  , p-value= 0.6367
+m_max <- lm(wing.loading..Nm.2. ~ range_max, data = lm_input) #adR = -0.04219  , p-value= 0.6367
+
+m_median <- lm(wing.loading..Nm.2. ~ range_median, data = lm_input) #adR = 0.3463 , p-value= 0.003758
+
+winds <- cor.test(lm_input$range_max, lm_input$range_median) #cor 0.079 , p = 0.7392
+
+
+#difference between wind median and max
+lm_input %>% 
+  mutate(wind_diff = range_max/range_median) %>% 
+  summarize(max_diff = max(wind_diff),
+            min_diff = min(wind_diff))
 
 ### Plot Fig. S6 -------------------------------------------------------------------------
 #save the tree as supplementary material

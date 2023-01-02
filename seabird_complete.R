@@ -24,7 +24,7 @@ library(stargazer)
 #library(windR)
 
 setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/")
-source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 ggplotRegression <- function (fit) {
@@ -46,8 +46,17 @@ load("R_files/ssf_input_annotated_60_15_30alt_18spp.RData") #ann_30
   
 
 ann_30 <- ann_30 %>%  
-  mutate(group = paste(common_name, colony.name, sep = "_")) %>% 
+  full_join(lm_input[c("sci_name", "species")]) %>%
+  mutate(group = paste(species, colony.name, sep = "_")) %>% 
+  select(c(12, 31, 14, 32, 13, 2, 7, 3, 4, 10, 11, 16, 18, 21, 23, 28)) %>% 
+  rename(colony_name = colony.name,
+         trip_id = TripID,
+         location_long = location.long,
+         location_lat = location.lat) %>% 
   as.data.frame()
+
+#save for public repo
+saveRDS(ann_30, "/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/public_data/used_alt_annotated.rds")
 
 ### STEP 2: Calculate within-stratum variances ------------------------------------ #####
 
@@ -275,7 +284,7 @@ load("R_files/sig_data.RData") #sig_data
 load("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/data/From_Sophie/Peter_Ryan_data_annotated_SplitTrip.Rdata") #PR_data_split
 
 ayl <- PR_data_split %>% 
-  filter(common_name == "Atlantic Yellow-nosed Albatross", TripID == sig_data[sig_data$common_name == "Atlantic Yellow-nosed Albatross", "TripID"]) %>% 
+  filter(common_name == "Atlantic Yellow-nosed Albatross" & TripID == sig_data[sig_data$common_name == "Atlantic Yellow-nosed Albatross", "TripID"]) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs)
 
 sig_data$stratum <-as.character(sig_data$stratum)
