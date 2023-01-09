@@ -158,6 +158,7 @@ ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
         axis.text.y = element_blank(),
         legend.title = element_blank())
 
+
 #----- STEP 4: linear models (+ plot Fig 4)--------------------------------------
 
 # maximum encountered wind as a function of wing loading
@@ -168,6 +169,12 @@ m2 <- lm(wing.loading..Nm.2. ~ range_median, data = lm_input) # adjRsq = 0.3463
 
 # wing loading as a function of maximum wind conditions at breeding range
 m3 <- lm(wing.loading..Nm.2. ~ range_max, data = lm_input) # adjRsq = -0.04219 
+
+# max encountered wind as a function of median wind speed at the breeding range
+m4 <- lm(max_wind ~ range_median, data = lm_input) # adjRsq = 0.31
+
+# max encountered wind as a funciton of max wind speed at the breeding range
+m5 <- lm(max_wind ~ range_max, data = lm_input) # adjRsq = 0.31
 
 # ------------------------------------------------------ plot Figure 4:
 #convert to long form for plotting
@@ -195,13 +202,62 @@ ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed, col = wind_source, 
   guides(shape = guide_legend("Flight style:"))
 
 
+  
+#greyscale
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/wind_lms_bw.png", width = 7, height = 5.5, units = "in", res = 300)
+
+ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed, linetype = wind_source)) +
+  geom_smooth(aes(y = wind_speed, group = wind_source), color = "black", method = "lm", alpha = .1, level = .95) + #95% standard error
+  geom_point(aes(y = wind_speed, shape = flight_style), size = 1.5, stroke = 0.8) +
+  labs(x = expression("Wing loading (Nm"^-2*")"),
+       y = expression("Wind speed (m s"^-1*")")) +
+  scale_shape_manual(values = c(4,0,2,1)) +
+  scale_linetype_manual(values = c("dashed", "twodash", "dotted"), name = "Wind data:", labels = c("Max encountered", "Breeding range max", "Breeding range median")) +
+  scale_fill_manual(values = c("dashed", "twodash", "dotted"), name = "Wind data:", labels = c("Max encountered", "Breeding range max", "Breeding range median")) +
+  theme_minimal() + 
+  guides(shape = guide_legend("Flight style:"))
+
+dev.off()
+  
+#three panels instead of one. the flight style points get mixed up in one panel
+
+X11(width = 10, height = 4)
+
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/wind_lms_gray2.png", width = 10, height = 4, units = "in", res = 300)
+
+ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed)) +
+  geom_smooth(aes(y = wind_speed, group = wind_source), color = "black", method = "lm", alpha = .1, level = .95, lwd = 0.5) + #95% standard error
+  geom_point(aes(y = wind_speed, shape = flight_style), size = 0.9, stroke = 0.8) +
+  labs(x = expression("Wing loading (Nm"^-2*")"),
+       y = expression("Wind speed (m s"^-1*")")) +
+  scale_shape_manual(values = c(4,0,2,1)) +
+  facet_wrap(~ wind_source, labeller = labeller(wind_source = c( "max_wind_ms" = "Maximum wind speed \n encountered", 
+                                                                 "range_max" = "Maximum wind speed \n at breeding range", 
+                                                                 "range_median" = "Median windspeed \n at breeding range"))) +
+  theme_minimal() + 
+  guides(shape = guide_legend("Flight style:")) +
+  theme(legend.title = element_text(size = 11),
+        strip.text = element_text(size = 12))
+
+dev.off()
+
 #----- STEP 5: test for spatio-temporal autocorrelation --------------------------------------
 
 #temporal correlation. result: no temporal autocorrelation
 acf(resid(m1))
+acf(resid(m2))
+acf(resid(m3))
+acf(resid(m4))
+acf(resid(m5))
 
 #spatial autocorrelation. bubble plot result: no autocorrelation
 spdata <- data.frame(resid = resid(m1), x = lm_input$colony_long, y = lm_input$colony_lat)
+spdata <- data.frame(resid = resid(m2), x = lm_input$colony_long, y = lm_input$colony_lat)
+spdata <- data.frame(resid = resid(m3), x = lm_input$colony_long, y = lm_input$colony_lat)
+spdata <- data.frame(resid = resid(m4), x = lm_input$colony_long, y = lm_input$colony_lat)
+spdata <- data.frame(resid = resid(m5), x = lm_input$colony_long, y = lm_input$colony_lat)
+
 
 #convert to a spatial object
 coordinates(spdata) <-~ x + y
