@@ -224,7 +224,7 @@ dev.off()
 
 X11(width = 10, height = 4)
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/wind_lms_gray4.png", width = 10, height = 4, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/linear_models.png", width = 10, height = 4)
 
 ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed)) +
   geom_smooth(aes(y = wind_speed, group = wind_source), color = "black", method = "lm", alpha = .1, level = .95, lwd = 0.5) + #95% standard error
@@ -301,7 +301,7 @@ raw_wind <- raw_wind %>%
 clr <- oce::oceColorsPalette(120)[14]
 
 #write the plot to disk
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/distr_plot_linedraw.png", width = 6.5, height = 10, units = "in", res = 300)
+pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/wind_distribution.pdf", width = 6.5, height = 10)
 
 ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) + 
   stat_density_ridges(data = raw_wind[raw_wind$wind_data == "range",], color = "#A9A9A9", fill = "#A9A9A9",
@@ -322,11 +322,11 @@ ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) +
   new_scale_color() +
   scale_x_continuous(limits = c(-1, 28)) +
   geom_point(data = raw_wind %>% group_by(species_f) %>% slice(1),
-             aes(x = -0.9, y = species_f, shape = flight_style_F), size = 1.8, stroke = 0.4, color = clr) +
+             aes(x = -0.9, y = species_f, shape = flight_style_F), size = 1.8, stroke = 0.4, color = "black") +
   scale_shape_manual(values = c("Dynamic soaring" = 4,"Flapping" = 0, "Thermal soaring" = 2, "Wind soaring" = 1)) +
   geom_image(data = lm_input, aes( x = 22, y = as.numeric(species_f) + 0.5, image = image),asp = 0.5, size = 0.05) +
   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
-  theme_linedraw() +
+  theme_minimal() +
   guides(shape = guide_legend("Flight style:")) +
   theme(legend.position = "bottom",legend.title = element_text(size = 10), 
         legend.text=element_text(size = 7))
