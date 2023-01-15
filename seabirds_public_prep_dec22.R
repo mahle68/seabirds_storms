@@ -224,7 +224,7 @@ dev.off()
 
 X11(width = 10, height = 4)
 
-png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/wind_lms_gray2.png", width = 10, height = 4, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/wind_lms_gray4.png", width = 10, height = 4, units = "in", res = 300)
 
 ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed)) +
   geom_smooth(aes(y = wind_speed, group = wind_source), color = "black", method = "lm", alpha = .1, level = .95, lwd = 0.5) + #95% standard error
@@ -234,11 +234,11 @@ ggplot(long_df, aes(x = wing.loading..Nm.2., y = wind_speed)) +
   scale_shape_manual(values = c(4,0,2,1)) +
   facet_wrap(~ wind_source, labeller = labeller(wind_source = c( "max_wind_ms" = "Maximum wind speed \n encountered", 
                                                                  "range_max" = "Maximum wind speed \n at breeding range", 
-                                                                 "range_median" = "Median windspeed \n at breeding range"))) +
+                                                                 "range_median" = "Median wind speed \n at breeding range"))) +
   theme_minimal() + 
   guides(shape = guide_legend("Flight style:")) +
   theme(legend.title = element_text(size = 11),
-        strip.text = element_text(size = 12))
+        strip.text = element_text(size = 12,face = "bold"))
 
 dev.off()
 
@@ -274,7 +274,7 @@ summary_info <- ann %>%
 
 cor.test(summary_info$n_trips, summary_info$max_wind_ms) #R = 0.149
 
-#----- STEP 7: Plot Figure 2 ----------------------------------------------------------------
+#----- STEP 7: Plot Figure 1 ----------------------------------------------------------------
 
 #plotting this figure is computationally demanding. I suggest writing it directly to file.
 
@@ -301,7 +301,7 @@ raw_wind <- raw_wind %>%
 clr <- oce::oceColorsPalette(120)[14]
 
 #write the plot to disk
-png("distr_plot.png", width = 6.5, height = 10, units = "in", res = 300)
+png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/figs/distr_plot_linedraw.png", width = 6.5, height = 10, units = "in", res = 300)
 
 ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) + 
   stat_density_ridges(data = raw_wind[raw_wind$wind_data == "range",], color = "#A9A9A9", fill = "#A9A9A9",
@@ -326,7 +326,7 @@ ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) +
   scale_shape_manual(values = c("Dynamic soaring" = 4,"Flapping" = 0, "Thermal soaring" = 2, "Wind soaring" = 1)) +
   geom_image(data = lm_input, aes( x = 22, y = as.numeric(species_f) + 0.5, image = image),asp = 0.5, size = 0.05) +
   labs(y = "", x = expression("Wind speed (m s"^-1*")")) +
-  theme_minimal() +
+  theme_linedraw() +
   guides(shape = guide_legend("Flight style:")) +
   theme(legend.position = "bottom",legend.title = element_text(size = 10), 
         legend.text=element_text(size = 7))
