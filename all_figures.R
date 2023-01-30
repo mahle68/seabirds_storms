@@ -2,7 +2,7 @@
 #follows from seabirds_public.R
 
 #Aug 22, 2022
-#Elham Nourani, PHD
+#Elham Nourani, PhD
 
 library(tidyverse)
 library(ggridges)

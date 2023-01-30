@@ -13,6 +13,8 @@ library(sp)
 library(ggnewscale)
 library(ggimage)
 
+
+#setwd("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/public_data")
 #----- STEP 1: input data --------------------------------------------
 #data is available via the Edmond repository: "seabirds' wind niche", https://doi.org/10.17617/3.8U7EHD
 ann_30 <- readRDS("used_alt_annotated.rds") #this file contains used and alternative steps (hourly). This will be used for permutation tests. Alternative steps were generated following the workflow in: https://github.com/mahle68/global_seascape_public/blob/main/step_generation.R
@@ -159,7 +161,7 @@ ggplot(sig_data, aes(x = wind_speed, y = stratum)) +
         legend.title = element_blank())
 
 
-#----- STEP 4: linear models (+ plot Fig 4)--------------------------------------
+#----- STEP 4: linear models (+ plot Fig 3)--------------------------------------
 
 # maximum encountered wind as a function of wing loading
 m1 <- lm(max_wind ~ wing.loading..Nm.2., data = lm_input) # adjRsq = 0.31  
@@ -184,7 +186,7 @@ long_df <- lm_input %>%
   slice(1) %>% 
   pivot_longer(cols = c("max_wind_ms", "range_median", "range_max"),
                names_to = "wind_source",
-               values_to = "wind_speed")
+               values_to = "wind_speed") 
 
 #pick colors from the oce package
 clr <- oce::oceColorsPalette(120)[14]
@@ -291,6 +293,8 @@ lm_input <- lm_input %>%
                         "sun.png", NA), 
          species_f = factor(species, levels = new_order))
 
+#masked booby is also tropical
+lm_input[lm_input$species == "Masked booby", "image"] <- "sun.png"
 
 raw_wind <- raw_wind %>% 
   mutate(species_f = factor(species, levels = new_order),
@@ -301,7 +305,11 @@ raw_wind <- raw_wind %>%
 clr <- oce::oceColorsPalette(120)[14]
 
 #write the plot to disk
-pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/wind_distribution.pdf", width = 6.5, height = 10)
+#pdf("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/wind_distribution_jan23.pdf", width = 4.5, height = 8)
+#the pdf is too large (100MB). try exporting as a png and then convert to pdf. or try tiff
+#png("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/distr_plot_jan23.png", width = 6.5, height = 10, units = "in", res = 300)
+#curr biol doesnt accept png. so do a tiff
+tiff("/home/enourani/ownCloud/Work/Projects/seabirds_and_storms/paper_prep/Curr_Biol/revision_2/files_to_submit/distr_plot_jan23.tiff", width = 6.5, height = 10, units = "in", res = 300)
 
 ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) + 
   stat_density_ridges(data = raw_wind[raw_wind$wind_data == "range",], color = "#A9A9A9", fill = "#A9A9A9",
@@ -333,7 +341,7 @@ ggplot(raw_wind, aes(x = wind_speed_ms, y = species_f)) +
 
 dev.off()
 
-#----- STEP 8: Plot Figure 3 ----------------------------------------------------------------
+#----- STEP 8: Plot Figure 2 ----------------------------------------------------------------
 #based on https://semba-blog.netlify.app/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
 
 #SESSION INFO ----------------------------------------------------------------
